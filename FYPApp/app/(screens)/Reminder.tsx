@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 const Reminder = () => {
   const [isReminderOn, setIsReminderOn] = useState(false);
@@ -9,6 +11,7 @@ const Reminder = () => {
   const [selectedMinute, setSelectedMinute] = useState('00');
   const [selectedAmPm, setSelectedAmPm] = useState('PM');
   const [currentTime, setCurrentTime] = useState('');
+  const router = useRouter();
 
   const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
   const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
@@ -37,7 +40,12 @@ const Reminder = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Daily Reminder</Text>
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => router.push('../(tabs)/Profile')}>
+          <MaterialIcons name="arrow-back" size={24} color="#FF69B4" />
+        </TouchableOpacity>
+        <Text style={styles.header}>Daily Reminder</Text>
+      </View>
 
       <View style={styles.timeContainer}>
         <Text style={styles.timeText}>{currentTime}</Text>
@@ -150,16 +158,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
-  heading: {
-    fontSize: 28,
-    fontWeight: '800',
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  header: {
+    fontSize: 23,
+    fontWeight: '700',
     color: '#FF1493',
-    marginBottom: 30,
-    letterSpacing: 0.5,
+    textAlign: 'center',
+    flex: 1,
   },
   timeContainer: {
     alignItems: 'center',
@@ -240,7 +251,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     textAlign: 'center',
   },
-  
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',

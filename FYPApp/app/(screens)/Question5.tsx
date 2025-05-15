@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, Pressable, PressableStateCallbackType } from "react-native";
 import { useRouter } from "expo-router";
 import { MaterialIcons } from '@expo/vector-icons'; 
 import { setUserData } from '../../datafiles/userData';
+import { Dimensions } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
-// Mapping between display text and backend-friendly values
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const goalMapping = {
   "Lose weight": "weight_loss",
   "Gain weight": "gain_weight",
@@ -12,7 +15,7 @@ const goalMapping = {
   "Stay fit": "stay_fit",
 };
 
-const goals = Object.keys(goalMapping); // ["Lose weight", "Gain weight", "Muscle build", "Stay fit"]
+const goals = Object.keys(goalMapping);
 
 const Question5: React.FC = () => {
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null); 
@@ -20,9 +23,9 @@ const Question5: React.FC = () => {
   const router = useRouter();
 
   const toggleGoal = (goal: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const updatedGoal = selectedGoal === goal ? null : goal;
     setSelectedGoal(updatedGoal);
-    console.log("Selected Goal:", updatedGoal || "None");
     animateSelection();
   };
 
@@ -47,7 +50,6 @@ const Question5: React.FC = () => {
       return;
     }
 
-    // Map the selected goal to the backend-friendly value
     const backendFriendlyGoal = goalMapping[selectedGoal as keyof typeof goalMapping];
     setUserData("goal", backendFriendlyGoal); 
     router.push("/(screens)/Question6");
@@ -55,45 +57,61 @@ const Question5: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Select Your Goal</Text>
-      <View style={styles.cardsContainer}>
-        {goals.map((goal) => (
-          <TouchableOpacity
-            key={goal}
-            style={[
-              styles.card,
-              selectedGoal === goal && styles.selectedCard,
-              { transform: [{ scale: selectedGoal === goal ? scaleValue : 1 }] },
-            ]}
-            onPress={() => toggleGoal(goal)}
-          >
-            <MaterialIcons
-              name={goal === "Muscle build" ? "fitness-center" : goal === "Lose weight" ? "emoji-food-beverage" : goal === "Gain weight" ? "restaurant" : "directions-run"}
-              size={30}
-              color={selectedGoal === goal ? "#fff" : "#d63384"}
-              style={styles.icon}
-            />
-            <Text style={[styles.cardText, selectedGoal === goal && styles.selectedText]}>
-              {goal}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.headerContainer}>
+        <Pressable 
+          onPress={() => router.push("/(screens)/Question4")} 
+          style={({ pressed }: PressableStateCallbackType) => [
+            styles.backButton,
+            { opacity: pressed ? 0.6 : 1 }
+          ]}
+        >
+          <MaterialIcons name="chevron-left" size={SCREEN_WIDTH * 0.06} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerText}>Select Your Goal</Text>
+        <View style={{ width: SCREEN_WIDTH * 0.06 }} />
       </View>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={[styles.button, styles.backButton]}
-          onPress={() => router.push("/(screens)/Question4")}
-        >
-          <Text style={styles.buttonText}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, selectedGoal ? styles.nextButton : styles.disabledButton]}
-          onPress={handleNext}
-          disabled={!selectedGoal}
-        >
-          <Text style={styles.buttonText}>Next</Text>
-        </TouchableOpacity>
+      <View style={styles.contentContainer}>
+        <Text style={styles.subHeader}>What's your primary fitness objective?</Text>
+        
+        <View style={styles.cardsContainer}>
+          {goals.map((goal) => (
+            <TouchableOpacity
+              key={goal}
+              style={[
+                styles.card,
+                selectedGoal === goal && styles.selectedCard,
+                { transform: [{ scale: selectedGoal === goal ? scaleValue : 1 }] },
+              ]}
+              onPress={() => toggleGoal(goal)}
+            >
+              <MaterialIcons
+                name={
+                  goal === "Muscle build" ? "fitness-center" : 
+                  goal === "Lose weight" ? "monitor-weight" : 
+                  goal === "Gain weight" ? "fastfood" : 
+                  "directions-run"
+                }
+                size={SCREEN_WIDTH * 0.08}
+                color={selectedGoal === goal ? "#fff" : "#e45ea9"}
+                style={styles.icon}
+              />
+              <Text style={[styles.cardText, selectedGoal === goal && styles.selectedText]}>
+                {goal}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, selectedGoal ? styles.nextButton : styles.disabledButton]}
+            onPress={handleNext}
+            disabled={!selectedGoal}
+          >
+            <Text style={styles.buttonText}>Next</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -102,49 +120,88 @@ const Question5: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: "#F9F9F9",
   },
-  header: {
-    fontSize: 30,
-    fontWeight: "bold",
-    marginBottom: 20,
-    color: "#333",
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    paddingVertical: SCREEN_HEIGHT * 0.02,
+    paddingTop: SCREEN_HEIGHT * 0.03,
+    backgroundColor: '#e45ea9',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 10,
+  },
+  headerText: {
+    fontSize: SCREEN_WIDTH * 0.055,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+    flex: 1,
+  },
+  backButton: {
+    padding: SCREEN_WIDTH * 0.02,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  contentContainer: {
+    flex: 1,
+    padding: SCREEN_WIDTH * 0.04,
+    justifyContent: 'center',
+  },
+  subHeader: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.04,
   },
   cardsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    marginVertical: 20,
+    marginVertical: SCREEN_HEIGHT * 0.02,
   },
   card: {
-    width: "40%",
-    padding: 20,
-    margin: 10,
+    width: "45%",
+    padding: SCREEN_WIDTH * 0.05,
+    margin: SCREEN_WIDTH * 0.02,
     backgroundColor: "#fff",
     borderRadius: 15,
     borderWidth: 2,
     borderColor: "#f0f0f0",
     alignItems: "center",
     justifyContent: "center",
-    elevation: 5,
-    height: 200,
-    position: "relative",
+    height: SCREEN_HEIGHT * 0.2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   selectedCard: {
-    backgroundColor: "#d63384",
-    borderColor: "#d63384",
-    elevation: 8,
+    backgroundColor: "#e45ea9",
+    borderColor: "#e45ea9",
+    shadowColor: '#e45ea9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
   },
   icon: {
-    marginBottom: 10,
+    marginBottom: SCREEN_HEIGHT * 0.01,
   },
   cardText: {
-    fontSize: 18,
+    fontSize: SCREEN_WIDTH * 0.045,
     fontWeight: "bold",
-    color: "#000",
+    color: "#333",
+    textAlign: 'center',
   },
   selectedText: {
     color: "#fff",
@@ -153,32 +210,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 20,
-    width: "100%",
+    marginTop: SCREEN_HEIGHT * 0.04,
   },
   button: {
-    paddingVertical: 8,
-    paddingHorizontal: 25,
-    borderRadius: 8,
+    paddingVertical: SCREEN_HEIGHT * 0.015,
+    paddingHorizontal: SCREEN_WIDTH * 0.08,
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
-    width: 100,
-    height: 40,
-    marginHorizontal: 10,
-  },
-  backButton: {
-    backgroundColor: "#a9a9a9",
+    marginHorizontal: SCREEN_WIDTH * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   nextButton: {
-    backgroundColor: "#d63384",
+    backgroundColor: "#e45ea9",
   },
   disabledButton: {
     backgroundColor: "#a9a9a9",
   },
   buttonText: {
     color: "#fff",
-    fontSize: 16,
-    textAlign: "center",
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: "600",
   },
 });
 

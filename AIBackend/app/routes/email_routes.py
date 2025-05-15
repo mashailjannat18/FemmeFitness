@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app  # Add current_app import
+from flask import Blueprint, request, jsonify, current_app
 import requests
 
 email_bp = Blueprint('email', __name__)

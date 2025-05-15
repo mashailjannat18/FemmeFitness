@@ -1,41 +1,61 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  FlatList, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Alert,
+  Image,
+  Animated,
+  Dimensions,
+  Pressable,
+  Easing,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { setUserData } from '../../datafiles/userData';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Question1: React.FC = () => {
   const [selectedAge, setSelectedAge] = useState<number | null>(null);
   const router = useRouter();
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(30))[0];
 
-  // Adjusted age range from 14 to 90
-  const ageRange = Array.from({ length: 90 - 12 + 1 }, (_, i) => i + 14);
+  const ageRange = Array.from({ length: 70 - 14 + 1 }, (_, i) => i + 14);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleAgeSelect = (age: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedAge(age);
-    console.log(`Age selected: ${age}`);
   };
 
   const handleNext = () => {
-    console.log(`Next pressed, selectedAge: ${selectedAge}`);
-
     if (selectedAge === null) {
-      console.log('No age selected, showing alert');
-      Alert.alert('Field Required', 'Please select your age before proceeding.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            console.log('Alert closed');
-          },
-        },
-      ]);
-    } else {
-      console.log('Age selected, navigating to Question2');
-      setUserData('age', selectedAge);
-
-      setTimeout(() => {
-        router.push('/(screens)/Question2');
-      }, 500);
+      Alert.alert('Field Required', 'Please select your age before proceeding.');
+      return;
     }
+    
+    setUserData('age', selectedAge);
+    router.push('/(screens)/Question2');
   };
 
   const renderAgeItem = ({ item }: { item: number }) => (
@@ -45,14 +65,12 @@ const Question1: React.FC = () => {
         item === selectedAge && styles.selectedAge,
       ]}
       onPress={() => handleAgeSelect(item)}
+      activeOpacity={0.8}
     >
-      <Text
-        style={[
-          styles.ageText,
-          item === selectedAge && styles.selectedAgeText,
-          (selectedAge !== null && (item === selectedAge - 1 || item === selectedAge + 1)) && styles.boldAgeText,
-        ]}
-      >
+      <Text style={[
+        styles.ageText,
+        item === selectedAge && styles.selectedAgeText,
+      ]}>
         {item}
       </Text>
     </TouchableOpacity>
@@ -60,31 +78,55 @@ const Question1: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>What Is Your Age?</Text>
-      <View style={styles.ageListContainer}>
-        <FlatList
-          data={ageRange}
-          keyExtractor={(item) => item.toString()}
-          renderItem={renderAgeItem}
-          contentContainerStyle={styles.ageList}
-          showsVerticalScrollIndicator={false}
+      {/* Custom Header */}
+      <Animated.View style={[styles.headerContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Pressable 
+          onPress={() => router.push('/(screens)/EntryScreen')} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.6 : 1 }
+          ]}
+        >
+          <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerText}>Your Age</Text>
+        <View style={{ width: SCREEN_WIDTH * 0.06 }} />
+      </Animated.View>
+
+      {/* Main Content */}
+      <Animated.View style={[styles.contentContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Image
+          source={require('../../assets/images/age.jpeg')}
+          style={styles.headerImage}
+          resizeMode="contain"
         />
-      </View>
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={[styles.button, styles.backButton]}
-          onPress={() => router.push('/(screens)')}
-        >
-          <Text style={styles.buttonText}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, selectedAge === null && styles.disabledButton]}
-          onPress={handleNext}
-          disabled={selectedAge === null}
-        >
-          <Text style={styles.buttonText}>Next</Text>
-        </TouchableOpacity>
-      </View>
+
+        <View style={styles.ageListContainer}>
+          <FlatList
+            data={ageRange}
+            renderItem={renderAgeItem}
+            keyExtractor={(item) => item.toString()}
+            contentContainerStyle={styles.ageList}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, selectedAge === null && styles.disabledButton]}
+            onPress={handleNext}
+            disabled={selectedAge === null}
+          >
+            <Text style={styles.buttonText}>Next</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </View>
   );
 };
@@ -92,73 +134,123 @@ const Question1: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingTop: 150,
+    backgroundColor: '#F9F9F9',
   },
-  text: {
-    fontSize: 24,
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    paddingVertical: SCREEN_HEIGHT * 0.02,
+    paddingTop: SCREEN_HEIGHT * 0.03,
+    backgroundColor: '#e45ea9',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 10,
+  },
+  headerText: {
+    fontSize: SCREEN_WIDTH * 0.055,
     fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
+    color: '#fff',
+    textAlign: 'center',
+    flex: 1,
+  },
+  backButton: {
+    padding: SCREEN_WIDTH * 0.02,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  contentContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingTop: SCREEN_HEIGHT * 0.05,
+  },
+  headerImage: {
+    width: '85%',
+    height: SCREEN_HEIGHT * 0.25,
+    marginBottom: SCREEN_HEIGHT * 0.04,
+    borderRadius: 12,
   },
   ageListContainer: {
-    height: 300,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
+    width: SCREEN_WIDTH * 0.3,
+    height: SCREEN_HEIGHT * 0.35,
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#ffb6c1',
+    padding: 10,
+    marginBottom: SCREEN_HEIGHT * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
   ageList: {
     alignItems: 'center',
   },
   ageItem: {
-    height: 50,
+    height: SCREEN_WIDTH * 0.12,
+    width: SCREEN_WIDTH * 0.12,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 100,
+    marginVertical: SCREEN_HEIGHT * 0.01,
+    borderRadius: SCREEN_WIDTH * 0.06,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   selectedAge: {
+    borderColor: '#ff69b4',
     borderWidth: 2,
-    borderColor: '#d63384',
-    borderRadius: 10,
+    backgroundColor: '#ffe4e1',
+    transform: [{ scale: 1.1 }],
   },
   ageText: {
-    fontSize: 18,
-    color: '#666',
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#555',
   },
   selectedAgeText: {
-    fontSize: 24,
+    fontSize: SCREEN_WIDTH * 0.045,
     fontWeight: 'bold',
-    color: '#d63384',
-  },
-  boldAgeText: {
-    fontWeight: 'bold',
+    color: '#ff69b4',
   },
   buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    width: '80%',
+    marginTop: SCREEN_HEIGHT * 0.03,
   },
   button: {
-    backgroundColor: '#d63384',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-    marginHorizontal: 10,
-    elevation: 3,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    backgroundColor: '#a9a9a9',
+    backgroundColor: '#e45ea9',
+    paddingVertical: SCREEN_HEIGHT * 0.015,
+    paddingHorizontal: SCREEN_WIDTH * 0.08,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#e45ea9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   disabledButton: {
     backgroundColor: '#a9a9a9',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '600',
   },
 });
 

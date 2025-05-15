@@ -1,52 +1,169 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { Link } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Alert,
+  Animated,
+  Dimensions,
+  Pressable,
+  Easing,
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { setUserData } from '../../datafiles/userData';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
+// Type definition for MaterialCommunityIcons names
+type MaterialCommunityIconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Question3: React.FC = () => {
-  const [selectedHeight, setSelectedHeight] = useState<number | null>(null);
+  const diseases = [
+    { name: "Hypertension", icon: "heart-pulse" as MaterialCommunityIconName },
+    { name: "Diabetes Type 2", icon: "needle" as MaterialCommunityIconName },
+    { name: "Menopause", icon: "gender-female" as MaterialCommunityIconName }
+  ];
+  const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
+  const [noneSelected, setNoneSelected] = useState(false);
+  const router = useRouter();
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(30))[0];
 
-  // Adjusted height range from 3.0 feet to 6.5 feet (in increments of 0.1 feet)
-  const heightRange = Array.from({ length: 36 }, (_, i) => (3 + i * 0.1).toFixed(1));
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
-  const handleHeightSelect = (height: string) => {
-    const selected = parseFloat(height);
-    setSelectedHeight(selected);
-    setUserData('height', selected);
+  const toggleDisease = (disease: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (noneSelected) setNoneSelected(false);
+    
+    setSelectedDiseases(prev => 
+      prev.includes(disease) 
+        ? prev.filter(d => d !== disease) 
+        : [...prev, disease]
+    );
+  };
+
+  const toggleNone = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedDiseases([]);
+    setNoneSelected(!noneSelected);
+  };
+
+  const handleNext = () => {
+    if (selectedDiseases.length === 0 && !noneSelected) {
+      Alert.alert('Selection Required', 'Please select at least one option');
+      return;
+    }
+    
+    setUserData('diseases', noneSelected ? [] : selectedDiseases);
+    router.push(selectedDiseases.includes("Menopause") 
+      ? '/(screens)/Question5' 
+      : '/(screens)/Question4');
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>What is Your Height (ft)?</Text>
-      <View style={styles.optionsContainer}>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={selectedHeight?.toString()}
-            onValueChange={handleHeightSelect}
-            style={styles.picker}
-          >
-            {heightRange.map((height) => (
-              <Picker.Item key={height} label={`${height} ft`} value={height} />
-            ))}
-          </Picker>
-        </View>
-      </View>
-      <View style={styles.buttonContainer}>
-        <Link href="/(screens)/Question2" style={[styles.button, styles.backButton]}>
-          <Text style={styles.buttonText}>Back</Text>
-        </Link>
+      {/* Custom Header */}
+      <Animated.View style={[styles.headerContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Pressable 
+          onPress={() => router.push('/(screens)/Question2')} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.6 : 1 }
+          ]}
+        >
+          <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerText}>Health Conditions</Text>
+        <View style={{ width: SCREEN_WIDTH * 0.06 }} />
+      </Animated.View>
 
-        {selectedHeight !== null ? (
-          <Link href="/(screens)/Question4" style={styles.button}>
-            <Text style={styles.buttonText}>Next</Text>
-          </Link>
-        ) : (
-          <TouchableOpacity style={[styles.button, styles.disabledButton]} disabled={true}>
+      {/* Main Content */}
+      <Animated.View style={[styles.contentContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Text style={styles.subtitle}>Select any conditions that apply to you:</Text>
+        
+        <View style={styles.optionsContainer}>
+          {diseases.map((disease) => (
+            <TouchableOpacity
+              key={disease.name}
+              style={[
+                styles.option,
+                selectedDiseases.includes(disease.name) && styles.selectedOption
+              ]}
+              onPress={() => toggleDisease(disease.name)}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons 
+                name={disease.icon} 
+                size={SCREEN_WIDTH * 0.06} 
+                color={selectedDiseases.includes(disease.name) ? '#fff' : '#e45ea9'} 
+              />
+              <Text style={[
+                styles.optionText,
+                selectedDiseases.includes(disease.name) && styles.selectedText
+              ]}>
+                {disease.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          
+          <TouchableOpacity
+            style={[
+              styles.option,
+              noneSelected && styles.selectedOption
+            ]}
+            onPress={toggleNone}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons 
+              name="check-circle-outline" as MaterialCommunityIconName
+              size={SCREEN_WIDTH * 0.06} 
+              color={noneSelected ? '#fff' : '#e45ea9'} 
+            />
+            <Text style={[
+              styles.optionText,
+              noneSelected && styles.selectedText
+            ]}>
+              None of these
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[
+              styles.button, 
+              (selectedDiseases.length === 0 && !noneSelected) && styles.disabledButton
+            ]}
+            onPress={handleNext}
+            disabled={selectedDiseases.length === 0 && !noneSelected}
+          >
             <Text style={styles.buttonText}>Next</Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      </Animated.View>
     </View>
   );
 };
@@ -54,56 +171,104 @@ const Question3: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center', // Center vertically
-    alignItems: 'center', // Center horizontally
-    backgroundColor: '#fff',
+    backgroundColor: '#F9F9F9',
   },
-  text: {
-    fontSize: 24,
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    paddingVertical: SCREEN_HEIGHT * 0.02,
+    paddingTop: SCREEN_HEIGHT * 0.03,
+    backgroundColor: '#e45ea9',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 10,
+  },
+  headerText: {
+    fontSize: SCREEN_WIDTH * 0.055,
     fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
+    color: '#fff',
+    textAlign: 'center',
+    flex: 1,
+  },
+  backButton: {
+    padding: SCREEN_WIDTH * 0.02,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  contentContainer: {
+    flex: 1,
+    padding: SCREEN_WIDTH * 0.05,
+    justifyContent: 'center',
+    paddingTop: -15,
+  },
+  subtitle: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#666',
+    marginBottom: SCREEN_HEIGHT * 0.03,
+    textAlign: 'center',
   },
   optionsContainer: {
-    width: 200,
-    padding: 5,
-    marginTop: 20,
+    marginBottom: SCREEN_HEIGHT * 0.03,
   },
-  pickerContainer: {
-    width: '100%',
-    borderRadius: 8,
-    borderWidth: 2, // Updated border width
-    borderColor: '#a9a9a9', // Added border color
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SCREEN_WIDTH * 0.04,
+    marginBottom: SCREEN_HEIGHT * 0.015,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  picker: {
-    height: 55,
-    width: '100%',
-    color: '#666',
+  selectedOption: {
+    backgroundColor: '#e45ea9',
+    borderColor: '#e45ea9',
+  },
+  optionText: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#333',
+    marginLeft: SCREEN_WIDTH * 0.03,
+    fontWeight: '500',
+  },
+  selectedText: {
+    color: '#fff',
   },
   buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 30,
+    justifyContent: 'center',
   },
   button: {
-    backgroundColor: '#d63384',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-    marginHorizontal: 10,
-    elevation: 3,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    backgroundColor: '#a9a9a9',
+    backgroundColor: '#e45ea9',
+    paddingVertical: SCREEN_HEIGHT * 0.015,
+    paddingHorizontal: SCREEN_WIDTH * 0.08,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#e45ea9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   disabledButton: {
     backgroundColor: '#a9a9a9',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '600',
   },
 });
 

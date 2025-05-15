@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
+const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+
 export type UserData = {
   username: string;
   age: number;
@@ -11,10 +13,16 @@ export type UserData = {
   activityLevel: number;
   restDay: string;
   challengeDays: number;
+  preferredRestDay: string;
   email: string;
   password: string;
   workoutPlan: any[];
   mealPlan?: any[];
+  intensity?: string;
+  lastPeriodDate: Date | null;
+  cycleLength: number;
+  bleedingDays: number;
+  cyclePhases?: any[];
 };
 
 const defaultUserData: UserData = {
@@ -24,19 +32,25 @@ const defaultUserData: UserData = {
   height: 0,
   diseases: [],
   goal: '',
-  areasOfFocus: [],
+  areasOfFocus: ['Full Body'], // Default to 'Full Body'
   activityLevel: 0,
   restDay: '',
   challengeDays: 0,
+  preferredRestDay: '',
   email: '',
   password: '',
   workoutPlan: [],
   mealPlan: [],
+  intensity: '',
+  lastPeriodDate: null,
+  cycleLength: 0,
+  bleedingDays: 0,
+  cyclePhases: [],
 };
 
 export let userData: UserData = { ...defaultUserData };
 
-export const setUserData = (screenKey: keyof UserData, data: number | string | string[] | any[] | null): void => {
+export const setUserData = (screenKey: keyof UserData, data: number | string | string[] | any[] | Date | null | boolean): void => {
   userData = { ...userData, [screenKey]: data };
 };
 
@@ -72,6 +86,7 @@ export const addUserToSupabase = async (
 
     console.log('userData after setting provided values:', userData);
 
+    // Validate required fields
     if (userData.age === null || userData.age === 0) {
       throw new Error('Age is required for workout plan generation.');
     }
@@ -87,97 +102,154 @@ export const addUserToSupabase = async (
     if (!userData.restDay) {
       throw new Error('Rest day is required for workout plan generation.');
     }
+    if (!userData.areasOfFocus || userData.areasOfFocus.length === 0) {
+      throw new Error('At least one focus area is required for workout plan generation.');
+    }
 
+    // Map user-facing goals to backend values
     const goalMap: { [key: string]: string } = {
-      'Lose weight': 'weight_loss',
-      'Gain weight': 'gain_weight',
-      'Muscle build': 'build_muscle',
-      'Stay fit': 'stay_fit',
+      'weight_loss': 'Lose weight',
+      'gain_weight': 'Gain weight',
+      'build_muscle': 'Muscle build',
+      'stay_fit': 'Stay fit',
     };
 
-    const payload = {
-      age: Number(userData.age),
-      activityLevel: Number(userData.activityLevel),
-      goal: goalMap[userData.goal] || userData.goal,
-      weight: Number(userData.weight),
-      challengeDays: Number(userData.challengeDays),
+    // Validate goal
+    if (!(userData.goal in goalMap)) {
+      throw new Error(`Invalid goal: ${userData.goal}. Must be one of: ${Object.keys(goalMap).join(', ')}`);
+    }
+
+    // Fetch cycle phases from the backend
+    let cyclePhases: any[] = [];
+    if (userData.lastPeriodDate && userData.cycleLength > 0 && userData.bleedingDays > 0) {
+      const cyclePayload = {
+        lastPeriodDate: userData.lastPeriodDate.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-'), // Format as YYYY-MM-DD
+        cycleLength: userData.cycleLength,
+        bleedingDays: userData.bleedingDays,
+        challengeDays: userData.challengeDays,
+        age: userData.age,
+        weight: userData.weight,
+        height: userData.height,
+      };
+
+      console.log('Fetching cycle phases with payload:', cyclePayload);
+
+      const cycleResponse = await fetch('http://192.168.1.9:5000/api/generate-cycle-phases', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cyclePayload),
+      });
+
+      if (!cycleResponse.ok) {
+        const text = await cycleResponse.text();
+        console.error('Cycle phases response:', text);
+        throw new Error(`Failed to fetch cycle phases: ${cycleResponse.status} ${cycleResponse.statusText} - ${text}`);
+      }
+
+      try {
+        cyclePhases = await cycleResponse.json();
+        console.log('Fetched cycle phases:', cyclePhases);
+      } catch (jsonError) {
+        const text = await cycleResponse.text();
+        console.error('Cycle phases JSON parse error. Response:', text);
+        throw new Error(`Failed to parse cycle phases response: ${jsonError.message}`);
+      }
+    } else {
+      console.log('No valid menstrual cycle data provided, using empty cycle phases');
+    }
+    setUserData('cyclePhases', cyclePhases);
+
+    // Prepare payload for plan generation with mapped goal
+    const mappedGoal = goalMap[userData.goal];
+    const planPayload = {
+      userId: username, // Use username as userId for now
+      age: userData.age,
+      weight: userData.weight,
+      height: userData.height,
+      diseases: userData.diseases,
+      goal: mappedGoal, // Use mapped goal for API call
+      areasOfFocus: userData.areasOfFocus,
+      activityLevel: userData.activityLevel,
       preferredRestDay: userData.restDay,
-      height: Number(userData.height),
+      challengeDays: userData.challengeDays,
+      cyclePhases: userData.cyclePhases,
     };
-    console.log('Sending payload to backend:', payload);
 
+    console.log('Plan payload:', planPayload);
+
+    // Call the API to generate plans
     const response = await fetch('http://192.168.1.9:5000/api/generate-plan', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(planPayload),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Backend response error:', errorText);
-      throw new Error(`Failed to generate plans: ${response.status} - ${errorText || 'No error message'}`);
+      const text = await response.text();
+      console.error('Workout plan response:', text);
+      throw new Error(`Failed to generate plans: ${response.status} ${response.statusText} - ${text}`);
     }
 
-    const result = await response.json();
-    console.log('Plans generated:', result);
-
-    if (!result.workout_plan || !Array.isArray(result.workout_plan) || result.workout_plan.length === 0) {
-      console.error('Invalid workout plan structure:', result.workout_plan);
-      throw new Error('Workout plan is not a non-empty array');
+    let planData;
+    try {
+      planData = await response.json();
+      console.log('Fetched workout plan:', planData);
+    } catch (jsonError) {
+      const text = await response.text();
+      console.error('Workout plan JSON parse error. Response:', text);
+      throw new Error(`Failed to parse workout plan response: ${jsonError.message}`);
     }
 
-    if (!result.meal_plan || !Array.isArray(result.meal_plan) || result.meal_plan.length === 0) {
-      console.error('Invalid meal plan structure:', result.meal_plan);
-      throw new Error('Meal plan is not a non-empty array');
-    }
+    const { workout_plan, meal_plan, intensity } = planData;
+    setUserData('workoutPlan', workout_plan);
+    setUserData('mealPlan', meal_plan);
+    setUserData('intensity', intensity);
 
-    setUserData('workoutPlan', result.workout_plan);
-    setUserData('mealPlan', result.meal_plan);
-    console.log('Stored plans in userData:', { workoutPlan: userData.workoutPlan, mealPlan: userData.mealPlan });
-
-    const rpcPayload = {
-      p_username: userData.username,
-      p_email: userData.email,
-      p_password: userData.password,
+    // Insert user and plans into Supabase with mapped goal
+    const { data: rpcData, error: rpcError } = await supabase.rpc('insert_user_and_workout_plan', {
+      p_email: email,
+      p_password: password,
+      p_username: username,
       p_age: userData.age,
       p_weight: userData.weight,
       p_height: userData.height,
-      p_diseases: userData.diseases.length > 0 ? userData.diseases.join(', ') : null,
-      p_goal: userData.goal,
-      p_areas_of_focus: userData.areasOfFocus.length > 0 ? userData.areasOfFocus.join(', ') : null,
+      p_diseases: userData.diseases,
+      p_goal: mappedGoal,
+      p_areas_of_focus: userData.areasOfFocus,
       p_activity_level: userData.activityLevel,
       p_preferred_rest_day: userData.restDay,
+      p_start_date: today,
       p_challenge_days: userData.challengeDays,
-      p_workout_plan: userData.workoutPlan,
-      p_meal_plan: userData.mealPlan,
-    };
+      p_cycle_phases: userData.cyclePhases,
+      p_last_period_date: userData.lastPeriodDate?.toISOString(),
+      p_cycle_length: userData.cycleLength,
+      p_bleeding_days: userData.bleedingDays,
+      p_workout_plan: workout_plan,
+      p_meal_plan: meal_plan,
+      p_intensity: intensity,
+    });
 
-    console.log('RPC payload:', rpcPayload);
-
-    const { data, error } = await supabase.rpc('insert_user_and_workout_plan', rpcPayload);
-
-    if (error) {
-      console.error('Supabase RPC error:', error);
-      throw new Error(`Failed to insert data into Supabase: ${error.message}`);
+    if (rpcError) {
+      console.error('Supabase error:', rpcError);
+      throw new Error(`Failed to insert user data: ${rpcError.message}`);
     }
 
-    console.log('User data, workout plan, and meal plan successfully saved!', data);
-    userId = data[0]?.user_id || null;
-
-    if (userId === null) {
-      throw new Error('Failed to retrieve user ID from Supabase response');
+    // Properly extract the user_id from the RPC response
+    if (rpcData && rpcData.length > 0) {
+      userId = rpcData[0].user_id;
+    } else {
+      throw new Error('No user ID returned from database');
     }
 
+    console.log('User inserted successfully with ID:', userId);
     return userId;
-  } catch (err) {
-    console.error('Error in addUserToSupabase:', err);
-    if (userId) {
-      await supabase
-        .from('User')
-        .delete()
-        .eq('id', userId);
-      console.log(`Deleted user with id ${userId} due to signup error.`);
-    }
-    throw err;
+
+  } catch (error) {
+    console.error('Error in addUserToSupabase:', error);
+    throw error;
   }
 };

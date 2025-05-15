@@ -1,19 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  Dimensions,
+  Easing
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useUserAuth } from '@/context/UserAuthContext';
 import { resetUserData } from '@/datafiles/userData';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const ConfirmCode: React.FC = () => {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds (600 seconds)
-  const [resendCooldown, setResendCooldown] = useState(60); // 1 minute cooldown for resend
+  const [timeLeft, setTimeLeft] = useState(600);
+  const [resendCooldown, setResendCooldown] = useState(60);
   const router = useRouter();
   const { email } = useLocalSearchParams<{ email: string }>();
   const { verifyCode, resendCode } = useUserAuth();
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(30))[0];
+
+  // Fade-in and slide-up animations
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   // Countdown timer for code expiration
   useEffect(() => {
@@ -38,6 +72,7 @@ const ConfirmCode: React.FC = () => {
   }, [resendCooldown]);
 
   const handleVerify = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (!code || code.length !== 6 || !/^\d+$/.test(code)) {
       setError('Please enter a valid 6-digit code.');
       return;
@@ -58,8 +93,8 @@ const ConfirmCode: React.FC = () => {
 
       await verifyCode(email, code);
 
-      resetUserData(); // Reset data after successful signup
-      router.replace('../(tabs)');
+      resetUserData();
+      router.replace('/(tabs)');
     } catch (err: any) {
       console.error('Verification error:', err.message);
       setError(err.message || 'Invalid or expired confirmation code.');
@@ -68,16 +103,13 @@ const ConfirmCode: React.FC = () => {
     }
   };
 
-  const handleBack = () => {
-    router.back();
-  };
-
   const handleResend = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       setResendLoading(true);
       setError(null);
-      setTimeLeft(600); // Reset expiration timer to 10 minutes
-      setResendCooldown(60); // Reset resend cooldown to 1 minute
+      setTimeLeft(600);
+      setResendCooldown(60);
 
       if (!email) {
         throw new Error('Email is missing.');
@@ -87,7 +119,7 @@ const ConfirmCode: React.FC = () => {
     } catch (err: any) {
       console.error('Resend error:', err.message);
       if (err.message === 'Maximum resend attempts reached. Please restart the signup process.') {
-        router.push('/(screens)/Question1'); // Redirect to start of signup
+        router.push('/(screens)/Question1');
       }
       setError(err.message || 'Failed to resend confirmation code.');
     } finally {
@@ -95,10 +127,15 @@ const ConfirmCode: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.back();
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#d63384" />
+        <ActivityIndicator size="large" color="#e45ea9" />
         <Text style={styles.loadingText}>Verifying your code...</Text>
       </View>
     );
@@ -106,59 +143,93 @@ const ConfirmCode: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Enter Confirmation Code</Text>
-      <Text style={styles.subHeader}>
-        We sent a 6-digit code to {email}. It expires in {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')} minutes.
-      </Text>
+      {/* Header */}
+      <Animated.View style={[styles.headerContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Pressable 
+          onPress={handleBack} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.6 : 1 }
+          ]}
+        >
+          <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerText}>Verify Email</Text>
+        <View style={{ width: SCREEN_WIDTH * 0.06 }} />
+      </Animated.View>
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {/* Content */}
+      <Animated.View style={[styles.contentContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <View style={styles.iconContainer}>
+          <MaterialCommunityIcons 
+            name="email-check" 
+            size={SCREEN_WIDTH * 0.15} 
+            color="#e45ea9" 
+          />
+        </View>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={[styles.input, error && styles.invalidInput]}
-          placeholder="Enter 6-digit code"
-          keyboardType="numeric"
-          maxLength={6}
-          value={code}
-          onChangeText={(text) => {
-            setCode(text.trim());
-            setError(null);
-          }}
-        />
-      </View>
+        <Text style={styles.title}>Enter Confirmation Code</Text>
+        <Text style={styles.subTitle}>
+          We sent a 6-digit code to {email}. It expires in {Math.floor(timeLeft / 60)}:
+          {(timeLeft % 60).toString().padStart(2, '0')}
+        </Text>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={[styles.button, styles.backButton]} onPress={handleBack}>
-          <Text style={styles.buttonText}>Back</Text>
-        </TouchableOpacity>
+        {error && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning" size={SCREEN_WIDTH * 0.05} color="#fff" />
+            <Text style={styles.errorBannerText}>{error}</Text>
+          </View>
+        )}
+
+        <View style={styles.codeInputContainer}>
+          <TextInput
+            style={styles.codeInput}
+            placeholder="Enter 6-digit code"
+            keyboardType="numeric"
+            maxLength={6}
+            value={code}
+            onChangeText={(text) => {
+              setCode(text.trim());
+              setError(null);
+            }}
+            textAlign="center"
+          />
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, code.length === 6 && timeLeft > 0 ? null : styles.disabledButton]}
+            onPress={handleVerify}
+            disabled={code.length !== 6 || timeLeft <= 0}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>Verify</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
-          style={[styles.button, code.length === 6 && timeLeft > 0 ? styles.activeButton : styles.disabledButton]}
-          onPress={handleVerify}
-          disabled={code.length !== 6 || timeLeft <= 0 || loading}
+          style={styles.resendContainer}
+          onPress={handleResend}
+          disabled={resendLoading || resendCooldown > 0}
         >
-          <Text style={styles.buttonText}>Verify</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        onPress={handleResend}
-        disabled={resendLoading || resendCooldown > 0}
-        style={styles.resendContainer}
-      >
-        {resendLoading ? (
-          <ActivityIndicator size="small" color="#d63384" />
-        ) : (
-          <Text
-            style={[
+          {resendLoading ? (
+            <ActivityIndicator size="small" color="#e45ea9" />
+          ) : (
+            <Text style={[
               styles.resendText,
-              resendCooldown > 0 ? styles.resendTextDisabled : styles.resendTextActive,
-            ]}
-          >
-            {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
-          </Text>
-        )}
-      </TouchableOpacity>
+              resendCooldown > 0 ? styles.resendTextDisabled : styles.resendTextActive
+            ]}>
+              {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 };
@@ -166,100 +237,133 @@ const ConfirmCode: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#F9F9F9',
   },
-  header: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    color: '#333',
-  },
-  subHeader: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    width: '80%',
-    marginVertical: 10,
-  },
-  input: {
-    width: '100%',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderColor: '#ccc',
-    borderWidth: 1,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  invalidInput: {
-    borderColor: '#e74c3c',
-  },
-  errorText: {
-    color: '#e74c3c',
-    fontSize: 14,
-    marginTop: 5,
-    marginBottom: 10,
-  },
-  buttonContainer: {
+  headerContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 15,
-    width: '80%',
-  },
-  button: {
-    paddingVertical: 8,
-    paddingHorizontal: 25,
-    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
-    width: 100,
-    height: 40,
-    marginHorizontal: 3,
-    elevation: 3,
+    justifyContent: 'space-between',
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    paddingVertical: SCREEN_HEIGHT * 0.02,
+    paddingTop: SCREEN_HEIGHT * 0.03,
+    backgroundColor: '#e45ea9',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 10,
+  },
+  headerText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+    flex: 1,
   },
   backButton: {
-    backgroundColor: '#ccc',
+    padding: SCREEN_WIDTH * 0.02,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
-  activeButton: {
-    backgroundColor: '#d63384',
+  contentContainer: {
+    flex: 1,
+    padding: SCREEN_WIDTH * 0.05,
+    justifyContent: 'center',
+  },
+  iconContainer: {
+    alignItems: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  title: {
+    fontSize: SCREEN_WIDTH * 0.05,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.01,
+  },
+  subTitle: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.04,
+    paddingHorizontal: SCREEN_WIDTH * 0.05,
+  },
+  errorBanner: {
+    backgroundColor: '#F44336',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SCREEN_WIDTH * 0.03,
+    borderRadius: 8,
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  errorBannerText: {
+    color: '#fff',
+    fontSize: SCREEN_WIDTH * 0.035,
+    marginLeft: SCREEN_WIDTH * 0.02,
+  },
+  codeInputContainer: {
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  codeInput: {
+    height: SCREEN_HEIGHT * 0.07,
+    fontSize: SCREEN_WIDTH * 0.05,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    textAlign: 'center',
+  },
+  buttonContainer: {
+    marginBottom: SCREEN_HEIGHT * 0.02,
+  },
+  button: {
+    backgroundColor: '#e45ea9',
+    padding: SCREEN_HEIGHT * 0.02,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#e45ea9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#a9a9a9',
+    shadowColor: '#000',
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '600',
   },
   resendContainer: {
-    marginTop: 20,
+    alignItems: 'center',
+    marginTop: SCREEN_HEIGHT * 0.02,
   },
   resendText: {
-    fontSize: 16,
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '500',
   },
   resendTextActive: {
-    color: '#d63384',
+    color: '#e45ea9',
   },
   resendTextDisabled: {
-    color: '#ccc',
+    color: '#a9a9a9',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#F9F9F9',
   },
   loadingText: {
-    marginTop: 20,
-    fontSize: 18,
-    color: '#333',
-    textAlign: 'center',
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#666',
+    marginTop: SCREEN_HEIGHT * 0.02,
   },
 });
 

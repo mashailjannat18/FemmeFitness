@@ -1,9 +1,23 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  Dimensions,
+  Easing
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { getUserData } from '@/datafiles/userData';
 import { useUserAuth } from '@/context/UserAuthContext';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Question10: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -18,21 +32,32 @@ const Question10: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
   const { signUp } = useUserAuth();
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(30))[0];
 
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleEmailChange = (text: string) => {
     const trimmedText = text.trim();
     setEmail(trimmedText);
     setIsEmailValid(emailRegex.test(trimmedText) || trimmedText === '');
     setShowEmailError(trimmedText !== '' && !emailRegex.test(trimmedText));
-    setShowSignupError(null);
-  };
-
-  const handlePasswordChange = (text: string) => {
-    const trimmedText = text.trim();
-    setPassword(trimmedText);
-    setShowPasswordError(trimmedText.length > 0 && trimmedText.length < 6);
     setShowSignupError(null);
   };
 
@@ -43,8 +68,11 @@ const Question10: React.FC = () => {
     setShowSignupError(null);
   };
 
-  const handleBack = () => {
-    router.push('/(screens)/Question8');
+  const handlePasswordChange = (text: string) => {
+    const trimmedText = text.trim();
+    setPassword(trimmedText);
+    setShowPasswordError(trimmedText.length > 0 && trimmedText.length < 6);
+    setShowSignupError(null);
   };
 
   const handleSignUp = async () => {
@@ -66,110 +94,152 @@ const Question10: React.FC = () => {
         throw new Error('Challenge days must be selected and greater than 0.');
       }
 
-      // Initiate signup and send confirmation code
       await signUp(email, password, username, challengeDays);
 
-      // Navigate to confirmation screen
       router.push({
-        pathname: './ConfirmCode',
+        pathname: '/(screens)/ConfirmCode',
         params: { email: email.trim() },
       });
     } catch (err: any) {
       console.error('Signup error:', err.message);
-      if (
-        err.message === 'This email has already been signed up with' ||
-        err.message === 'This username is taken'
-      ) {
-        setShowSignupError(err.message);
+      if (err.message === 'This email has already been signed up with') {
+        setShowSignupError('This email is already registered.');
+      } else if (err.message === 'This username is taken') {
+        setShowSignupError('This username is already taken.');
       } else {
-        setShowSignupError('Failed to send confirmation code.');
+        setShowSignupError(err.message || 'An error occurred during signup.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  let passwordInput: TextInput | null = null;
+  const handleBack = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/(screens)/Question8');
+  };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#d63384" />
-        <Text style={styles.loadingText}>
-          Please wait while we process your information
-        </Text>
+        <ActivityIndicator size="large" color="#e45ea9" />
+        <Text style={styles.loadingText}>Creating your account...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Create an Account</Text>
-
-      {showSignupError && <Text style={styles.errorText}>{showSignupError}</Text>}
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={[styles.input, !isEmailValid && styles.invalidInput]}
-          placeholder="Enter your email"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={handleEmailChange}
-          onSubmitEditing={() => passwordInput?.focus()}
-        />
-      </View>
-      {showEmailError && <Text style={styles.errorText}>Please enter a valid email address.</Text>}
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={[styles.input, showUsernameError && styles.invalidInput]}
-          placeholder="Enter your username"
-          value={username}
-          onChangeText={handleUsernameChange}
-        />
-      </View>
-      {showUsernameError && <Text style={styles.errorText}>Username must be at least 3 characters long.</Text>}
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          ref={(input) => (passwordInput = input)}
-          style={[styles.input, styles.passwordInput, showPasswordError && styles.invalidInput]}
-          placeholder="Enter your password"
-          secureTextEntry={!showPassword}
-          value={password}
-          onChangeText={handlePasswordChange}
-        />
-        <TouchableOpacity
-          style={styles.eyeIcon}
-          onPress={() => setShowPassword(!showPassword)}
-        >
-          <Ionicons
-            name={showPassword ? 'eye-off' : 'eye'}
-            size={24}
-            color="#666"
-          />
-        </TouchableOpacity>
-      </View>
-      {showPasswordError && <Text style={styles.errorText}>Password must be at least 6 characters long.</Text>}
-
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={[styles.button, styles.backButton]} onPress={handleBack}>
-          <Text style={styles.buttonText}>Back</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.button,
-            email && password && username && isEmailValid && password.length >= 6 && username.length >= 3
-              ? styles.activeButton
-              : styles.disabledButton,
+      {/* Header */}
+      <Animated.View style={[styles.headerContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <Pressable 
+          onPress={handleBack} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.6 : 1 }
           ]}
-          onPress={handleSignUp}
-          disabled={!email || !password || !username || !isEmailValid || password.length < 6 || username.length < 3}
         >
-          <Text style={styles.buttonText}>Sign Up</Text>
-        </TouchableOpacity>
-      </View>
+          <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerText}>Create Account</Text>
+        <View style={{ width: SCREEN_WIDTH * 0.06 }} />
+      </Animated.View>
+
+      {/* Content */}
+      <Animated.View style={[styles.contentContainer, {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }]
+      }]}>
+        <View style={styles.iconContainer}>
+          <MaterialCommunityIcons 
+            name="account-plus" 
+            size={SCREEN_WIDTH * 0.2} 
+            color="#e45ea9" 
+          />
+        </View>
+
+        {showSignupError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning" size={SCREEN_WIDTH * 0.05} color="#fff" />
+            <Text style={styles.errorBannerText}>{showSignupError}</Text>
+          </View>
+        )}
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <View style={[styles.inputWrapper, !isEmailValid && styles.invalidInput]}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={handleEmailChange}
+              autoCapitalize="none"
+            />
+          </View>
+          {showEmailError && <Text style={styles.errorText}>Please enter a valid email</Text>}
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Username</Text>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.input}
+              placeholder="Choose a username"
+              value={username}
+              onChangeText={handleUsernameChange}
+              autoCapitalize="none"
+            />
+          </View>
+          {showUsernameError && <Text style={styles.errorText}>Username must be at least 3 characters</Text>}
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Password</Text>
+          <View style={[styles.inputWrapper, showPasswordError && styles.invalidInput]}>
+            <TextInput
+              style={styles.input}
+              placeholder="Create a password"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={handlePasswordChange}
+            />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowPassword(!showPassword);
+              }}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off' : 'eye'}
+                size={SCREEN_WIDTH * 0.05}
+                color="#666"
+              />
+            </TouchableOpacity>
+          </View>
+          {showPasswordError && <Text style={styles.errorText}>Password must be at least 6 characters</Text>}
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              email && password && username && isEmailValid && password.length >= 6 && username.length >= 3
+                ? null
+                : styles.disabledButton
+            ]}
+            onPress={handleSignUp}
+            disabled={!email || !password || !username || !isEmailValid || password.length < 6 || username.length < 3}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>Sign Up</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </View>
   );
 };
@@ -177,91 +247,132 @@ const Question10: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#F9F9F9',
   },
-  header: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    marginBottom: 40,
-    textAlign: 'center',
-    color: '#333',
-  },
-  inputContainer: {
-    width: '80%',
-    position: 'relative',
-    marginVertical: 10,
-  },
-  input: {
-    width: '100%',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderColor: '#ccc',
-    borderWidth: 1,
-    fontSize: 16,
-  },
-  passwordInput: {
-    paddingRight: 40,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 10,
-    top: '50%',
-    transform: [{ translateY: -12 }],
-  },
-  invalidInput: {
-    borderColor: '#e74c3c',
-  },
-  errorText: {
-    color: '#e74c3c',
-    fontSize: 14,
-    marginTop: 5,
-  },
-  buttonContainer: {
+  headerContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 15,
-    width: '80%',
-  },
-  button: {
-    paddingVertical: 8,
-    paddingHorizontal: 25,
-    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
-    width: 100,
-    height: 40,
-    marginHorizontal: 3,
-    elevation: 3,
+    justifyContent: 'space-between',
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    paddingVertical: SCREEN_HEIGHT * 0.02,
+    paddingTop: SCREEN_HEIGHT * 0.03,
+    backgroundColor: '#e45ea9',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 10,
+  },
+  headerText: {
+    color: '#fff',
+    fontSize: SCREEN_WIDTH * 0.055,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   backButton: {
-    backgroundColor: '#ccc',
+    padding: SCREEN_WIDTH * 0.02,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
-  activeButton: {
-    backgroundColor: '#d63384',
+  contentContainer: {
+    flex: 1,
+    padding: SCREEN_WIDTH * 0.05,
+  },
+  iconContainer: {
+    alignItems: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.03,
+    paddingTop: SCREEN_HEIGHT * 0.02,
+  },
+  errorBanner: {
+    backgroundColor: '#F44336',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SCREEN_WIDTH * 0.03,
+    borderRadius: 8,
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  errorBannerText: {
+    color: '#fff',
+    fontSize: SCREEN_WIDTH * 0.035,
+    marginLeft: SCREEN_WIDTH * 0.02,
+  },
+  inputContainer: {
+    marginBottom: SCREEN_HEIGHT * 0.02,
+  },
+  inputLabel: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#333',
+    marginBottom: SCREEN_HEIGHT * 0.01,
+    marginLeft: SCREEN_WIDTH * 0.01,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  input: {
+    flex: 1,
+    height: SCREEN_HEIGHT * 0.07,
+    fontSize: SCREEN_WIDTH * 0.04,
+  },
+  invalidInput: {
+    borderColor: '#F44336',
+  },
+  eyeIcon: {
+    padding: SCREEN_WIDTH * 0.02,
+  },
+  errorText: {
+    color: '#F44336',
+    fontSize: SCREEN_WIDTH * 0.035,
+    marginTop: SCREEN_HEIGHT * 0.005,
+    marginLeft: SCREEN_WIDTH * 0.01,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: SCREEN_HEIGHT * 0.04,
+  },
+  button: {
+    backgroundColor: '#e45ea9',
+    paddingVertical: SCREEN_HEIGHT * 0.015,
+    paddingHorizontal: SCREEN_WIDTH * 0.08,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: SCREEN_WIDTH * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#a9a9a9',
+    shadowColor: '#000',
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#F9F9F9',
   },
   loadingText: {
-    marginTop: 20,
-    fontSize: 18,
-    color: '#333',
-    textAlign: 'center',
-    paddingHorizontal: 20,
+    fontSize: SCREEN_WIDTH * 0.04,
+    color: '#666',
+    marginTop: SCREEN_HEIGHT * 0.02,
   },
 });
 

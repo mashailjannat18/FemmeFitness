@@ -1,39 +1,57 @@
-import React from 'react';
-import { StyleSheet, View, Image, Text } from 'react-native';
-import { Link } from 'expo-router';
-import { initializeSignup } from '@/datafiles/userData';
+import React, { useEffect, useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Image,
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  Easing,
+} from 'react-native';
+import { useRouter } from 'expo-router';
 
-const FullScreenImageWithButton: React.FC = () => {
-  const handleSignUpPress = () => {
-    initializeSignup(); // Reset userData before starting signup
-  };
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const IntroMessageScreen: React.FC = () => {
+  const router = useRouter();
+  const fadeAnim = useState(new Animated.Value(0))[0];
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.quad),
+    }).start();
+
+    const timer = setTimeout(() => {
+      router.replace('/(screens)/EntryScreen');
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [router, fadeAnim]);
 
   return (
     <View style={styles.container}>
-      <Image source={require('../../assets/images/1.jpg')} style={styles.image} />
-      <View style={styles.overlay}>
-        <Text style={styles.mainText}>Welcome to FemmeFitness</Text>
-        <Text style={styles.subText}>Your Path to a Happier, Healthier You!</Text>
-        <View style={styles.container1}>
-          <Link
-            href={{
-              pathname: `./Question1`,
-            }}
-            style={styles.button1}
-            onPress={handleSignUpPress}
-          >
-            <Text style={styles.buttonText}>Sign Up</Text>
-          </Link>
-          <Link
-            href={{
-              pathname: `./Login`,
-            }}
-            style={styles.button2}
-          >
-            <Text style={styles.buttonText}>Login</Text>
-          </Link>
-        </View>
-      </View>
+      <Animated.View
+        style={[
+          styles.content,
+          {
+            opacity: fadeAnim,
+          },
+        ]}
+      >
+        <Image
+          source={require('../../assets/images/icon-image.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <ActivityIndicator
+          size="large"
+          color="#e45ea9"
+          style={styles.loader}
+        />
+      </Animated.View>
     </View>
   );
 };
@@ -41,54 +59,21 @@ const FullScreenImageWithButton: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  image: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
-  },
-  overlay: {
-    flex: 1,
+    backgroundColor: '#F9F9F9',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 20,
   },
-  mainText: {
-    color: 'white',
-    fontSize: 32,
-    marginBottom: 10,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  subText: {
-    color: 'white',
-    fontSize: 18,
-    marginBottom: 30,
-    textAlign: 'center',
+  logo: {
+    width: SCREEN_WIDTH * 0.5,
+    height: SCREEN_WIDTH * 0.5,
   },
-  container1: {
-    flexDirection: 'row',
-    gap: 50,
-  },
-  button1: {
-    backgroundColor: '#d63384',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-  },
-  button2: {
-    backgroundColor: '#d63384',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+  loader: {
+    marginTop: SCREEN_HEIGHT * 0.02,
   },
 });
 
-export default FullScreenImageWithButton;
+export default IntroMessageScreen;

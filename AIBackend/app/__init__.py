@@ -17,4 +17,7 @@ def create_app():
     from app.routes import email_routes
     app.register_blueprint(email_routes.email_bp, url_prefix='/api')
 
+    from app.routes.cycle_routes import cycle_bp
+    app.register_blueprint(cycle_bp, url_prefix='/api')
+
     return app
