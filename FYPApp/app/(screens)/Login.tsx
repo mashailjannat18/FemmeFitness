@@ -68,20 +68,32 @@ const Login: React.FC = () => {
 
   const handleLogin = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    // Validate inputs
     if (!email || !password || !isEmailValid || !isPasswordValid) {
       setShowEmailError(!isEmailValid && email !== '');
       setShowPasswordError(!isPasswordValid && password !== '');
       return;
     }
 
+    console.log('Login attempt with email:', email, 'and password:', password); // Log raw input
+
     setLoading(true);
-    const result = await login(email, password);
-    setLoading(false);
-    
-    if (result.success) {
-      router.push('/(tabs)');
-    } else {
-      setShowLoginError(result.error || 'Invalid email or password.');
+    try {
+      const result = await login(email, password);
+      
+      console.log('Login result:', result); // Log the result from login function
+      
+      if (result.success) {
+        router.push('/(tabs)');
+      } else {
+        setShowLoginError(result.error || 'Login failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Unexpected error during login:', error);
+      setShowLoginError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 

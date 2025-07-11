@@ -115,7 +115,7 @@ const GoalSetting = () => {
       }
 
       const startDate = new Date(workoutPlanData.start_date);
-      const currentDate = new Date('2025-05-15 11:46:00+05:00'); // Updated to 11:46 AM PKT, May 15, 2025
+      const currentDate = new Date(); // Updated to 11:46 AM PKT, May 15, 2025
       const daysElapsed = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
       if (daysElapsed >= userData.challenge_days) {
@@ -136,7 +136,7 @@ const GoalSetting = () => {
           height: userData.height,
         };
 
-        const cycleResponse = await fetch('http://192.168.1.9:5000/api/generate-cycle-phases', {
+        const cycleResponse = await fetch('http://10.135.64.168:5000/api/generate-cycle-phases', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cyclePayload),
@@ -166,13 +166,14 @@ const GoalSetting = () => {
         challengeDays: userData.challenge_days,
         preferredRestDay: userData.preferred_rest_days,
         height: userData.height,
+        startDate: currentDate.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-'),
         currentDay: daysElapsed,
         userId: userData.id,
         workoutPlanId: workoutPlanData.id,
         cyclePhases: cyclePhases.length > 0 ? cyclePhases : undefined,
       };
 
-      const response = await fetch('http://192.168.1.9:5000/api/update-plan', {
+      const response = await fetch('http://10.135.64.168:5000/api/update-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

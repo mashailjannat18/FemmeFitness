@@ -65,7 +65,7 @@ def load_user_profile(data: Dict[str, Any], cycle_phases: List[Dict]) -> None:
         # Derive health conditions from the diseases array
         diseases = data.get('diseases', [])
         USER_HEALTH_CONDITIONS = {
-            "has_diabetes": "Diabetes Type 2" in diseases,
+            "has_diabetes": "Diabetes" in diseases,
             "has_hypertension": "Hypertension" in diseases,
             "is_menopausal": "Menopause" in diseases,
         }

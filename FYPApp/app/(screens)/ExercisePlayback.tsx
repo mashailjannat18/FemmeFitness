@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  Pressable, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Pressable,
   Image,
   Animated,
   Easing,
-  Dimensions 
+  Dimensions,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/context/UserAuthContext';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Svg, { Circle, LinearGradient, Defs, Stop } from 'react-native-svg';
 
@@ -40,6 +41,8 @@ type Exercise = {
   workout_date: string;
   daily_workout_id?: number;
   structuredSets?: StructuredSet[];
+  YT_links: string | null;
+  time_segments: string | null;
 };
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -95,6 +98,62 @@ const ExercisePlayback: React.FC = () => {
   const isNumericReps = currentExercise && !currentExercise.reps.includes('sec hold');
   const repsCount = isNumericReps ? parseInt(currentExercise?.reps, 10) : 0;
   const holdSeconds = !isNumericReps && currentExercise ? parseInt(currentExercise.reps.split(' ')[0], 10) : 0;
+
+  // Helper function to parse YouTube links and segments
+  const parseYouTubeLinks = (links: string | null, segments: string | null) => {
+    if (!links || !segments) return [];
+
+    try {
+      const linkArray = links.split(',');
+      const segmentArray = segments.split(',');
+
+      return linkArray.map((link, index) => ({
+        url: link.trim(),
+        time: segmentArray[index]?.trim() || '0:00',
+      }));
+    } catch (error) {
+      console.error('Error parsing YouTube links:', error);
+      return [];
+    }
+  };
+
+  // YouTube Links Component
+  const YouTubeLinksSection = ({ links, segments }: { links: string | null; segments: string | null }) => {
+    const youtubeData = parseYouTubeLinks(links, segments);
+
+    if (youtubeData.length === 0) return null;
+
+    const handlePress = async (url: string) => {
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          console.error("Don't know how to open this URL:", url);
+        }
+      } catch (error) {
+        console.error('Error opening URL:', error);
+      }
+    };
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Video Tutorials</Text>
+        {youtubeData.map((item, index) => (
+          <TouchableOpacity
+            key={index}
+            style={styles.youtubeLink}
+            onPress={() => handlePress(item.url)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="youtube" size={24} color="#FF0000" />
+            <Text style={styles.youtubeLinkText}>Watch at {item.time}</Text>
+            <MaterialIcons name="open-in-new" size={18} color="#888" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
 
   // Reset state when switching exercises and start countdown
   useEffect(() => {
@@ -339,11 +398,11 @@ const ExercisePlayback: React.FC = () => {
           break;
         }
 
-        console.log(`Fetched batch at offset ${offset}:`, files.map(f => f.name));
+        console.log(`Fetched batch at offset ${offset}:`, files.map((f) => f.name));
         allFiles = [...allFiles, ...files];
         offset += limit;
 
-        const matchingFiles = files.filter(file => {
+        const matchingFiles = files.filter((file) => {
           const fileNameWithoutExtension = file.name.replace(/\.png$/, '');
           return fileNameWithoutExtension === exerciseName || fileNameWithoutExtension.startsWith(`${exerciseName} `);
         });
@@ -361,9 +420,9 @@ const ExercisePlayback: React.FC = () => {
         return;
       }
 
-      console.log('Total files fetched:', allFiles.map(f => f.name));
+      console.log('Total files fetched:', allFiles.map((f) => f.name));
 
-      const matchingFiles = allFiles.filter(file => {
+      const matchingFiles = allFiles.filter((file) => {
         const fileNameWithoutExtension = file.name.replace(/\.png$/, '');
         return fileNameWithoutExtension === exerciseName || fileNameWithoutExtension.startsWith(`${exerciseName} `);
       });
@@ -375,12 +434,10 @@ const ExercisePlayback: React.FC = () => {
         return;
       }
 
-      console.log(`Matching files for ${exerciseName}:`, matchingFiles.map(f => f.name));
+      console.log(`Matching files for ${exerciseName}:`, matchingFiles.map((f) => f.name));
 
-      const urls = matchingFiles.map(file => {
-        const { data } = supabase.storage
-          .from('workout-images')
-          .getPublicUrl(file.name);
+      const urls = matchingFiles.map((file) => {
+        const { data } = supabase.storage.from('workout-images').getPublicUrl(file.name);
         return data.publicUrl;
       });
 
@@ -418,7 +475,9 @@ const ExercisePlayback: React.FC = () => {
       return;
     }
 
-    const localTimestamp = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+    const localTimestamp = new Date()
+      .toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      .replace(/\//g, '-');
 
     try {
       // Delete existing records with the same user_id, workout_id, and completion_date
@@ -441,21 +500,27 @@ const ExercisePlayback: React.FC = () => {
       }
 
       // Insert the new completion record
-      const { error, data } = await supabase.from('ExerciseCompletions').insert({
-        user_id: user.id,
-        workout_id: exercise.id,
-        daily_workout_id: effectiveDailyWorkoutId,
-        completion_date: localTimestamp,
-        time_spent_seconds: Math.round(timeSpent),
-        calories_burned: status === 'completed' ? exercise.calories_burned : 0,
-        created_at: new Date().toISOString(),
-        status,
-      }).select('id').single();
+      const { error, data } = await supabase
+        .from('ExerciseCompletions')
+        .insert({
+          user_id: user.id,
+          workout_id: exercise.id,
+          daily_workout_id: effectiveDailyWorkoutId,
+          completion_date: localTimestamp,
+          time_spent_seconds: Math.round(timeSpent),
+          calories_burned: status === 'completed' ? exercise.calories_burned : 0,
+          created_at: new Date().toISOString(),
+          status,
+        })
+        .select('id')
+        .single();
 
       if (error) {
         console.error('Error storing exercise completion:', error.message, error.details);
       } else {
-        console.log(`Exercise ${exercise.exercise_name} stored with status ${status} and ID ${data.id}, ${timeSpent} seconds`);
+        console.log(
+          `Exercise ${exercise.exercise_name} stored with status ${status} and ID ${data.id}, ${timeSpent} seconds`,
+        );
         if (status === 'completed') {
           setCompletedExercises((prev) => [...prev, exercise.id]);
         }
@@ -646,10 +711,14 @@ const ExercisePlayback: React.FC = () => {
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty.toLowerCase()) {
-      case 'beginner': return '#4CAF50';
-      case 'intermediate': return '#FFC107';
-      case 'advanced': return '#F44336';
-      default: return '#9E9E9E';
+      case 'beginner':
+        return '#4CAF50';
+      case 'intermediate':
+        return '#FFC107';
+      case 'advanced':
+        return '#F44336';
+      default:
+        return '#9E9E9E';
     }
   };
 
@@ -699,10 +768,15 @@ const ExercisePlayback: React.FC = () => {
   if (exercises.length === 0 || !currentExercise) {
     return (
       <View style={styles.container}>
-        <Animated.View style={[styles.headerContainer, {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }]}>
+        <Animated.View
+          style={[
+            styles.headerContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <Pressable onPress={handleBackPress} style={styles.backButton}>
             <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
           </Pressable>
@@ -718,10 +792,15 @@ const ExercisePlayback: React.FC = () => {
   if (isFinished) {
     return (
       <View style={styles.container}>
-        <Animated.View style={[styles.headerContainer, {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }]}>
+        <Animated.View
+          style={[
+            styles.headerContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <Pressable onPress={handleBackPress} style={styles.backButton}>
             <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
           </Pressable>
@@ -737,10 +816,15 @@ const ExercisePlayback: React.FC = () => {
   if (error) {
     return (
       <View style={styles.container}>
-        <Animated.View style={[styles.headerContainer, {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }]}>
+        <Animated.View
+          style={[
+            styles.headerContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <Pressable onPress={handleBackPress} style={styles.backButton}>
             <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
           </Pressable>
@@ -756,30 +840,31 @@ const ExercisePlayback: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.headerContainer, {
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }]
-      }]}>
-        <Pressable 
-          onPress={handleBackPress} 
-          style={({ pressed }) => [
-            styles.backButton,
-            { opacity: pressed ? 0.6 : 1 }
-          ]}
+      <Animated.View
+        style={[
+          styles.headerContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <Pressable
+          onPress={handleBackPress}
+          style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}
         >
           <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#fff" />
         </Pressable>
         <Text style={styles.headerText}>{currentExercise.exercise_name}</Text>
       </Animated.View>
 
-      <ScrollView 
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View style={{
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }}>
+      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          }}
+        >
           {/* Image Section */}
           {imageUrls.length > 0 ? (
             <View style={styles.imageSection}>
@@ -793,25 +878,18 @@ const ExercisePlayback: React.FC = () => {
               >
                 {imageUrls.map((url, index) => (
                   <View key={index} style={[styles.imageContainer, { width: SCREEN_WIDTH }]}>
-                    <Image
-                      source={{ uri: url }}
-                      style={styles.image}
-                      resizeMode="contain"
-                    />
+                    <Image source={{ uri: url }} style={styles.image} resizeMode="contain" />
                   </View>
                 ))}
               </ScrollView>
-              
+
               {/* Image Pagination */}
               {imageUrls.length > 1 && (
                 <View style={styles.pagination}>
                   {imageUrls.map((_, index) => (
-                    <View 
-                      key={index} 
-                      style={[
-                        styles.paginationDot,
-                        index === activeImageIndex && styles.paginationDotActive
-                      ]} 
+                    <View
+                      key={index}
+                      style={[styles.paginationDot, index === activeImageIndex && styles.paginationDotActive]}
                     />
                   ))}
                 </View>
@@ -819,14 +897,13 @@ const ExercisePlayback: React.FC = () => {
             </View>
           ) : (
             <View style={[styles.noImageContainer, { height: SCREEN_HEIGHT * 0.25 }]}>
-              <MaterialCommunityIcons 
-                name="image-off" 
-                size={SCREEN_WIDTH * 0.12} 
-                color="#E0E0E0" 
-              />
+              <MaterialCommunityIcons name="image-off" size={SCREEN_WIDTH * 0.12} color="#E0E0E0" />
               <Text style={styles.noImageText}>No images available</Text>
             </View>
           )}
+
+          {/* YouTube Links Section */}
+          <YouTubeLinksSection links={currentExercise.YT_links} segments={currentExercise.time_segments} />
 
           {/* Set Info */}
           <View style={styles.setInfoContainer}>
@@ -874,8 +951,8 @@ const ExercisePlayback: React.FC = () => {
             {/* Action Buttons */}
             <View style={styles.playerButtonsContainer}>
               {isNumericReps && isPlaying && (
-                <TouchableOpacity 
-                  style={styles.doneButton} 
+                <TouchableOpacity
+                  style={styles.doneButton}
                   onPress={handleDonePress}
                   activeOpacity={0.7}
                 >
@@ -883,9 +960,9 @@ const ExercisePlayback: React.FC = () => {
                   <Text style={styles.buttonText}>Done</Text>
                 </TouchableOpacity>
               )}
-              
-              <TouchableOpacity 
-                style={styles.skipButton} 
+
+              <TouchableOpacity
+                style={styles.skipButton}
                 onPress={handleSkipExercise}
                 activeOpacity={0.7}
               >
@@ -898,19 +975,19 @@ const ExercisePlayback: React.FC = () => {
           {/* Exercise Details */}
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Exercise Details</Text>
-            
+
             <View style={styles.detailRow}>
               <MaterialCommunityIcons name="target" size={SCREEN_WIDTH * 0.04} color="#e45ea9" />
               <Text style={styles.detailLabel}>Target: </Text>
               <Text style={styles.detailValue}>{currentExercise.target_muscle}</Text>
             </View>
-            
+
             <View style={styles.detailRow}>
               <MaterialCommunityIcons name="notebook" size={SCREEN_WIDTH * 0.04} color="#e45ea9" />
               <Text style={styles.detailLabel}>Type: </Text>
               <Text style={styles.detailValue}>{currentExercise.type}</Text>
             </View>
-            
+
             <View style={styles.detailRow}>
               <MaterialCommunityIcons name="chart-bar" size={SCREEN_WIDTH * 0.04} color="#e45ea9" />
               <Text style={styles.detailLabel}>Difficulty: </Text>
@@ -927,8 +1004,8 @@ const ExercisePlayback: React.FC = () => {
           </View>
 
           {/* Exit Button */}
-          <TouchableOpacity 
-            style={styles.exitButton} 
+          <TouchableOpacity
+            style={styles.exitButton}
             onPress={handleExitPlayback}
             activeOpacity={0.8}
           >
@@ -1081,7 +1158,7 @@ const styles = StyleSheet.create({
   stopwatchContainer: {
     width: SCREEN_WIDTH * 0.32,
     height: SCREEN_WIDTH * 0.32,
-    borderRadius: (SCREEN_WIDTH * 0.40) / 2,
+    borderRadius: (SCREEN_WIDTH * 0.4) / 2,
     backgroundColor: 'white',
     borderColor: '#e45ea9',
     borderWidth: 8,
@@ -1162,6 +1239,24 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#e45ea9',
     paddingLeft: SCREEN_WIDTH * 0.03,
+  },
+  // YouTube Links
+  youtubeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEE',
+  },
+  youtubeLinkText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: SCREEN_WIDTH * 0.035,
+    color: '#333',
   },
   // Detail Rows
   detailRow: {

@@ -7,9 +7,9 @@ export type UserData = {
   age: number;
   weight: number;
   height: number;
-  diseases: string[];
+  diseases: string;
   goal: string;
-  areasOfFocus: string[];
+  areasOfFocus: string;
   activityLevel: number;
   restDay: string;
   challengeDays: number;
@@ -30,9 +30,9 @@ const defaultUserData: UserData = {
   age: 0,
   weight: 0,
   height: 0,
-  diseases: [],
+  diseases: '',
   goal: '',
-  areasOfFocus: ['Full Body'], // Default to 'Full Body'
+  areasOfFocus: '',
   activityLevel: 0,
   restDay: '',
   challengeDays: 0,
@@ -134,7 +134,7 @@ export const addUserToSupabase = async (
 
       console.log('Fetching cycle phases with payload:', cyclePayload);
 
-      const cycleResponse = await fetch('http://192.168.1.9:5000/api/generate-cycle-phases', {
+      const cycleResponse = await fetch('http://10.135.64.168:5000/api/generate-cycle-phases', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,7 +180,7 @@ export const addUserToSupabase = async (
     console.log('Plan payload:', planPayload);
 
     // Call the API to generate plans
-    const response = await fetch('http://192.168.1.9:5000/api/generate-plan', {
+    const response = await fetch('http://10.135.64.168:5000/api/generate-plan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

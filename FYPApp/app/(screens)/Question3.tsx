@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
   Alert,
   Animated,
   Dimensions,
@@ -15,7 +15,6 @@ import { setUserData } from '../../datafiles/userData';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
-// Type definition for MaterialCommunityIcons names
 type MaterialCommunityIconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -26,6 +25,7 @@ const Question3: React.FC = () => {
     { name: "Diabetes Type 2", icon: "needle" as MaterialCommunityIconName },
     { name: "Menopause", icon: "gender-female" as MaterialCommunityIconName }
   ];
+
   const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
   const [noneSelected, setNoneSelected] = useState(false);
   const router = useRouter();
@@ -50,42 +50,48 @@ const Question3: React.FC = () => {
 
   const toggleDisease = (disease: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (noneSelected) setNoneSelected(false);
+    
+    if (noneSelected) {
+      setNoneSelected(false);
+    }
     
     setSelectedDiseases(prev => 
       prev.includes(disease) 
-        ? prev.filter(d => d !== disease) 
+        ? prev.filter(d => d !== disease)
         : [...prev, disease]
     );
   };
 
   const toggleNone = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedDiseases([]);
+    
+    if (!noneSelected) {
+      setSelectedDiseases([]);
+    }
     setNoneSelected(!noneSelected);
   };
 
   const handleNext = () => {
     if (selectedDiseases.length === 0 && !noneSelected) {
-      Alert.alert('Selection Required', 'Please select at least one option');
+      Alert.alert('Selection Required', 'Please select at least one option or choose "None of these"');
       return;
     }
-    
-    setUserData('diseases', noneSelected ? [] : selectedDiseases);
-    router.push(selectedDiseases.includes("Menopause") 
-      ? '/(screens)/Question5' 
+
+    setUserData('diseases', noneSelected ? '' : selectedDiseases.join(','));
+    router.push(selectedDiseases.includes("Menopause")
+      ? '/(screens)/Question5'
       : '/(screens)/Question4');
   };
 
   return (
     <View style={styles.container}>
-      {/* Custom Header */}
+      {/* Header */}
       <Animated.View style={[styles.headerContainer, {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }]
       }]}>
-        <Pressable 
-          onPress={() => router.push('/(screens)/Question2')} 
+        <Pressable
+          onPress={() => router.push('/(screens)/Question2')}
           style={({ pressed }) => [
             styles.backButton,
             { opacity: pressed ? 0.6 : 1 }
@@ -102,33 +108,39 @@ const Question3: React.FC = () => {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }]
       }]}>
-        <Text style={styles.subtitle}>Select any conditions that apply to you:</Text>
-        
+        <Text style={styles.subtitle}>Select all conditions that apply to you:</Text>
+
         <View style={styles.optionsContainer}>
           {diseases.map((disease) => (
             <TouchableOpacity
               key={disease.name}
               style={[
                 styles.option,
-                selectedDiseases.includes(disease.name) && styles.selectedOption
+                selectedDiseases.includes(disease.name) && styles.selectedOption,
+                noneSelected && styles.disabledOption
               ]}
-              onPress={() => toggleDisease(disease.name)}
+              onPress={() => !noneSelected && toggleDisease(disease.name)}
               activeOpacity={0.8}
+              disabled={noneSelected}
             >
-              <MaterialCommunityIcons 
-                name={disease.icon} 
-                size={SCREEN_WIDTH * 0.06} 
-                color={selectedDiseases.includes(disease.name) ? '#fff' : '#e45ea9'} 
+              <MaterialCommunityIcons
+                name={disease.icon}
+                size={SCREEN_WIDTH * 0.06}
+                color={
+                  noneSelected ? '#ccc' :
+                  selectedDiseases.includes(disease.name) ? '#fff' : '#e45ea9'
+                }
               />
               <Text style={[
                 styles.optionText,
-                selectedDiseases.includes(disease.name) && styles.selectedText
+                selectedDiseases.includes(disease.name) && styles.selectedText,
+                noneSelected && styles.disabledText
               ]}>
                 {disease.name}
               </Text>
             </TouchableOpacity>
           ))}
-          
+
           <TouchableOpacity
             style={[
               styles.option,
@@ -137,10 +149,10 @@ const Question3: React.FC = () => {
             onPress={toggleNone}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons 
-              name="check-circle-outline" as MaterialCommunityIconName
-              size={SCREEN_WIDTH * 0.06} 
-              color={noneSelected ? '#fff' : '#e45ea9'} 
+            <MaterialCommunityIcons
+              name="check-circle-outline"
+              size={SCREEN_WIDTH * 0.06}
+              color={noneSelected ? '#fff' : '#e45ea9'}
             />
             <Text style={[
               styles.optionText,
@@ -154,7 +166,7 @@ const Question3: React.FC = () => {
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[
-              styles.button, 
+              styles.button,
               (selectedDiseases.length === 0 && !noneSelected) && styles.disabledButton
             ]}
             onPress={handleNext}
@@ -236,6 +248,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#e45ea9',
     borderColor: '#e45ea9',
   },
+  disabledOption: {
+    opacity: 0.6,
+  },
   optionText: {
     fontSize: SCREEN_WIDTH * 0.04,
     color: '#333',
@@ -244,6 +259,9 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     color: '#fff',
+  },
+  disabledText: {
+    color: '#ccc',
   },
   buttonContainer: {
     flexDirection: 'row',

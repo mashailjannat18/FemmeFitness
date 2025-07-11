@@ -3,7 +3,8 @@ import {
   View, 
   Text, 
   TextInput, 
-  TouchableOpacity, 
+  TouchableOpacity,
+  ScrollView,
   StyleSheet, 
   ActivityIndicator,
   Animated,
@@ -153,92 +154,94 @@ const Question10: React.FC = () => {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }]
       }]}>
-        <View style={styles.iconContainer}>
-          <MaterialCommunityIcons 
-            name="account-plus" 
-            size={SCREEN_WIDTH * 0.2} 
-            color="#e45ea9" 
-          />
-        </View>
-
-        {showSignupError && (
-          <View style={styles.errorBanner}>
-            <Ionicons name="warning" size={SCREEN_WIDTH * 0.05} color="#fff" />
-            <Text style={styles.errorBannerText}>{showSignupError}</Text>
-          </View>
-        )}
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Email</Text>
-          <View style={[styles.inputWrapper, !isEmailValid && styles.invalidInput]}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={handleEmailChange}
-              autoCapitalize="none"
+        <ScrollView>
+          <View style={styles.iconContainer}>
+            <MaterialCommunityIcons 
+              name="account-plus" 
+              size={SCREEN_WIDTH * 0.2} 
+              color="#e45ea9" 
             />
           </View>
-          {showEmailError && <Text style={styles.errorText}>Please enter a valid email</Text>}
-        </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Username</Text>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Choose a username"
-              value={username}
-              onChangeText={handleUsernameChange}
-              autoCapitalize="none"
-            />
-          </View>
-          {showUsernameError && <Text style={styles.errorText}>Username must be at least 3 characters</Text>}
-        </View>
+          {showSignupError && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="warning" size={SCREEN_WIDTH * 0.05} color="#fff" />
+              <Text style={styles.errorBannerText}>{showSignupError}</Text>
+            </View>
+          )}
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={[styles.inputWrapper, showPasswordError && styles.invalidInput]}>
-            <TextInput
-              style={styles.input}
-              placeholder="Create a password"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={handlePasswordChange}
-            />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowPassword(!showPassword);
-              }}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off' : 'eye'}
-                size={SCREEN_WIDTH * 0.05}
-                color="#666"
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email</Text>
+            <View style={[styles.inputWrapper, !isEmailValid && styles.invalidInput]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={handleEmailChange}
+                autoCapitalize="none"
               />
+            </View>
+            {showEmailError && <Text style={styles.errorText}>Please enter a valid email</Text>}
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Username</Text>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Choose a username"
+                value={username}
+                onChangeText={handleUsernameChange}
+                autoCapitalize="none"
+              />
+            </View>
+            {showUsernameError && <Text style={styles.errorText}>Username must be at least 3 characters</Text>}
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={[styles.inputWrapper, showPasswordError && styles.invalidInput]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Create a password"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={handlePasswordChange}
+              />
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowPassword(!showPassword);
+                }}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={SCREEN_WIDTH * 0.05}
+                  color="#666"
+                />
+              </TouchableOpacity>
+            </View>
+            {showPasswordError && <Text style={styles.errorText}>Password must be at least 6 characters</Text>}
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                email && password && username && isEmailValid && password.length >= 6 && username.length >= 3
+                  ? null
+                  : styles.disabledButton
+              ]}
+              onPress={handleSignUp}
+              disabled={!email || !password || !username || !isEmailValid || password.length < 6 || username.length < 3}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonText}>Sign Up</Text>
             </TouchableOpacity>
           </View>
-          {showPasswordError && <Text style={styles.errorText}>Password must be at least 6 characters</Text>}
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[
-              styles.button,
-              email && password && username && isEmailValid && password.length >= 6 && username.length >= 3
-                ? null
-                : styles.disabledButton
-            ]}
-            onPress={handleSignUp}
-            disabled={!email || !password || !username || !isEmailValid || password.length < 6 || username.length < 3}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonText}>Sign Up</Text>
-          </TouchableOpacity>
-        </View>
+        </ScrollView>
       </Animated.View>
     </View>
   );

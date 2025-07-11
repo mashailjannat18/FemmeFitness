@@ -1,0 +1,7 @@
+organization=labproject-testing
+projectKey=labproject-testing_sonarqube
+serverUrl=https://sonarcloud.io
+serverVersion=8.0.0.64297
+dashboardUrl=https://sonarcloud.io/dashboard?id=labproject-testing_sonarqube
+ceTaskId=AZdVvqqx_oF8nvwmLcgf
+ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AZdVvqqx_oF8nvwmLcgf

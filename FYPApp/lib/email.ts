@@ -3,7 +3,7 @@ import axios from 'axios';
 export const sendConfirmationEmail = async (email: string, code: string): Promise<void> => {
   try {
     const response = await axios.post(
-      'http://192.168.1.9:5000/api/send-confirmation-email',
+      'http://10.135.64.168:5000/api/send-confirmation-email',
       { email, code },
       {
         headers: {

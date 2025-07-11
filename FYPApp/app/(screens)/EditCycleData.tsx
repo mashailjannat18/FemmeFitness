@@ -46,7 +46,7 @@ export default function EditCycleData() {
     try {
       const { data: userData, error: userError } = await supabase
         .from('User')
-        .select('cycle_length, age, weight, height')
+        .select('cycle_length, age, weight, height, activity_level, goal, preferred_rest_days, challenge_days')
         .eq('id', user.id)
         .single();
 
@@ -54,7 +54,7 @@ export default function EditCycleData() {
         throw new Error('Failed to fetch user data');
       }
 
-      const response = await fetch('http://10.135.48.158:5000/api/predict-cycle', {
+      const response = await fetch('http://10.135.64.168:5000/api/predict-cycle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,18 +130,18 @@ export default function EditCycleData() {
 
       const payload = {
         age: userData.age,
-        activityLevel: 50, // Placeholder
-        goal: 'stay_fit', // Placeholder
+        activityLevel: userData.activity_level, // Placeholder
+        goal: userData.goal, // Placeholder
         weight: userData.weight,
-        challengeDays: 30, // Placeholder
-        preferredRestDay: 'Sunday', // Placeholder
+        challengeDays: userData.challenge_days, // Placeholder
+        preferredRestDay: userData.preferred_rest_days, // Placeholder
         height: userData.height,
         currentDay: daysElapsed,
         userId: user.id,
         workoutPlanId: workoutPlanData.id,
       };
 
-      const planResponse = await fetch('http://192.168.1.9:5000/api/update-plan', {
+      const planResponse = await fetch('http://10.135.64.168:5000/api/update-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -155,13 +155,13 @@ export default function EditCycleData() {
       await supabase.rpc('update_user_and_workout_plan', {
         p_user_id: user.id,
         p_weight: userData.weight,
-        p_activity_level: 50, // Placeholder
-        p_challenge_days: 30, // Placeholder
+        p_activity_level: userData.activity_level, // Placeholder
+        p_challenge_days: userData.challenge_days, // Placeholder
         p_workout_plan: planResult.workout_plan,
         p_meal_plan: planResult.meal_plan,
         p_start_date: currentDateObj.toISOString().split('T')[0],
         p_intensity: planResult.intensity,
-        p_goal: 'stay_fit', // Placeholder
+        p_goal: userData.goal, // Placeholder
         p_last_period_date: newLastPeriodDate,
         p_cycle_length: userData.cycle_length,
         p_bleeding_days: newBleedingDays,

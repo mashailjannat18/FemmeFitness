@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -12,10 +12,10 @@ import {
   Pressable,
   RefreshControl
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/context/UserAuthContext';
-import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Logo from '@/assets/images/Logo.png';
 import MealsImg from '@/assets/images/6.jpg';
@@ -25,7 +25,9 @@ type MealPlan = {
   dailyWorkoutId: string;
   dailyCalories: number;
   caloriesIntake: number;
+  workoutDate: string | null;
   isCompleted: boolean;
+  isCurrentDay: boolean;
 };
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -33,31 +35,22 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function Meals() {
   const [meals, setMeals] = useState<MealPlan[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const { user } = useUserAuth();
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  const fetchMealPlan = async () => {
-    if (!user) return;
+  const fetchMealPlan = useCallback(async () => {
+    if (!user || !user.id) {
+      console.log('No user or user ID, redirecting to Login');
+      router.push('/Login');
+      setLoading(false);
+      return;
+    }
 
     try {
+      setRefreshing(true);
       const { data: workoutPlan, error: workoutPlanError } = await supabase
         .from('WorkoutPlans')
         .select('id')
@@ -65,8 +58,11 @@ export default function Meals() {
         .eq('status', 'active')
         .single();
 
+      console.log('Fetched workoutPlan:', workoutPlan, 'Error:', workoutPlanError);
+
       if (workoutPlanError || !workoutPlan) {
         console.error('Error fetching workout plan:', workoutPlanError?.message || 'No active workout plan found');
+        setLoading(false);
         return;
       }
 
@@ -78,40 +74,67 @@ export default function Meals() {
           calories_intake,
           DailyWorkouts (
             id,
-            day_name
+            day_name,
+            daily_workout_date
           )
         `)
         .eq('workout_plan_id', workoutPlan.id)
         .order('daily_workout_id', { ascending: true });
 
+      console.log('Fetched mealPlans:', mealPlans, 'Error:', mealPlanError);
+
       if (mealPlanError || !mealPlans) {
         console.error('Error fetching meal plan:', mealPlanError?.message || 'No meal plan found');
+        setLoading(false);
         return;
       }
 
-      const mealData = mealPlans.map((meal) => ({
-        dayName: meal.DailyWorkouts?.day_name || `Day ${meal.daily_workout_id}`,
+      const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+      
+      const mealData = mealPlans.map((meal, index) => ({
+        dayName: meal.DailyWorkouts?.day_name || `Day ${index + 1}`,
         dailyWorkoutId: meal.daily_workout_id,
         dailyCalories: meal.daily_calories || 0,
         caloriesIntake: meal.calories_intake || 0,
+        workoutDate: meal.DailyWorkouts?.daily_workout_date || null,
         isCompleted: (meal.calories_intake || 0) >= (meal.daily_calories || 0) && (meal.daily_calories || 0) > 0,
+        isCurrentDay: meal.DailyWorkouts?.daily_workout_date === today,
       }));
 
+      console.log('Processed mealData:', mealData);
+
       setMeals(mealData);
+
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => setLoading(false));
     } catch (error) {
       console.error('Error fetching meal plan:', error);
+      setLoading(false);
+    } finally {
+      setRefreshing(false);
     }
-  };
+  }, [user, router]);
 
-  useEffect(() => {
-    fetchMealPlan();
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchMealPlan();
+    }, [fetchMealPlan])
+  );
 
-  const onRefresh = async () => {
-    setRefreshing(true);
+  const onRefresh = useCallback(async () => {
     await fetchMealPlan();
-    setRefreshing(false);
-  };
+  }, [fetchMealPlan]);
 
   const navigateToMealDetail = (meal: string, dailyWorkoutId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -125,6 +148,22 @@ export default function Meals() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(tabs)/Home');
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Animated.View style={[styles.loadingAnimation, { 
+          transform: [{ rotate: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['0deg', '360deg']
+          }) }]
+        }]}>
+          <FontAwesome5 name="utensils" size={SCREEN_WIDTH * 0.1} color="#e45ea9" />
+        </Animated.View>
+        <Text style={styles.loadingText}>Loading your meals...</Text>
+      </View>
+    );
+  }
 
   if (!user || !user.id) {
     return (
@@ -157,7 +196,6 @@ export default function Meals() {
 
   return (
     <View style={styles.container}>
-      {/* Custom Header */}
       <Animated.View style={[styles.headerContainer, {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }]
@@ -170,7 +208,6 @@ export default function Meals() {
         <Text style={styles.usernameText}>{user.username || 'User'}</Text>
       </Animated.View>
 
-      {/* Main Content */}
       <ScrollView 
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
@@ -187,7 +224,6 @@ export default function Meals() {
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
         }}>
-          {/* Hero Image */}
           <View style={styles.imageSection}>
             <Image 
               source={MealsImg} 
@@ -196,63 +232,79 @@ export default function Meals() {
             />
           </View>
 
-          {/* Title Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Meal Plans</Text>
             <Text style={styles.sectionDescription}>Select a day to view its meal plan</Text>
           </View>
 
-          {/* Meal Days */}
           <View style={styles.mealDaysContainer}>
             {meals.length > 0 ? (
-              meals.map((meal, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => navigateToMealDetail(meal.dayName, meal.dailyWorkoutId)}
-                  style={[
-                    styles.mealDayCard,
-                    meal.isCompleted && styles.completedMealDay
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.dayNumberContainer}>
-                    <Text style={styles.dayNumberText}>{index + 1}</Text>
-                  </View>
+              meals.map((meal) => {
+                const workoutDate = meal.workoutDate ? new Date(meal.workoutDate) : null;
+                const dayNumber = workoutDate ? workoutDate.getDate() : '';
+                const monthName = workoutDate ? workoutDate.toLocaleString('default', { month: 'short' }) : '';
 
-                  <View style={styles.mealInfo}>
-                    <Text style={styles.dayNameText}>{meal.dayName}</Text>
-                    
-                    <View style={styles.statsContainer}>
-                      <View style={styles.statItem}>
-                        <MaterialIcons 
-                          name="local-fire-department" 
-                          size={SCREEN_WIDTH * 0.04} 
-                          color="#FFA500" 
-                        />
-                        <Text style={styles.statText}>{meal.dailyCalories} cal</Text>
+                return (
+                  <TouchableOpacity
+                    key={meal.dailyWorkoutId}
+                    onPress={() => meal.isCurrentDay && navigateToMealDetail(meal.dayName, meal.dailyWorkoutId)}
+                    style={[
+                      styles.mealDayCard,
+                      meal.isCompleted && styles.completedMealDay,
+                      !meal.isCurrentDay && styles.disabledMealDay
+                    ]}
+                    activeOpacity={meal.isCurrentDay ? 0.8 : 1}
+                    disabled={!meal.isCurrentDay}
+                  >
+                    <View style={styles.dayNumberContainer}>
+                      <Text style={styles.dayNumberText}>{dayNumber}</Text>
+                      <Text style={styles.monthText}>{monthName}</Text>
+                    </View>
+
+                    <View style={styles.mealInfo}>
+                      <Text style={styles.dayNameText}>{meal.dayName}</Text>
+                      
+                      <View style={styles.statsContainer}>
+                        <View style={styles.statItem}>
+                          <MaterialIcons 
+                            name="local-fire-department" 
+                            size={SCREEN_WIDTH * 0.04} 
+                            color="#FFA500" 
+                          />
+                          <Text style={styles.statText}>{meal.dailyCalories} cal</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                          <MaterialCommunityIcons 
+                            name="food" 
+                            size={SCREEN_WIDTH * 0.04} 
+                            color="#4CAF50" 
+                          />
+                          <Text style={styles.statText}>{meal.caloriesIntake} cal</Text>
+                        </View>
                       </View>
-                      <View style={styles.statItem}>
-                        <MaterialCommunityIcons 
-                          name="food" 
-                          size={SCREEN_WIDTH * 0.04} 
+                    </View>
+
+                    {meal.isCompleted && (
+                      <View style={styles.completedBadge}>
+                        <MaterialIcons 
+                          name="check-circle" 
+                          size={SCREEN_WIDTH * 0.06} 
                           color="#4CAF50" 
                         />
-                        <Text style={styles.statText}>{meal.caloriesIntake} cal</Text>
                       </View>
-                    </View>
-                  </View>
-
-                  {meal.isCompleted && (
-                    <View style={styles.completedBadge}>
-                      <MaterialIcons 
-                        name="check-circle" 
-                        size={SCREEN_WIDTH * 0.06} 
-                        color="#4CAF50" 
-                      />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))
+                    )}
+                    {!meal.isCurrentDay && (
+                      <View style={styles.disabledOverlay}>
+                        <MaterialIcons 
+                          name="lock-outline" 
+                          size={SCREEN_WIDTH * 0.1} 
+                          color="white" 
+                        />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })
             ) : (
               <View style={styles.noMealsContainer}>
                 <MaterialCommunityIcons 
@@ -275,7 +327,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9F9F9',
   },
-  // Header Styles
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,11 +367,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
-  // Content Styles
   contentContainer: {
     paddingBottom: SCREEN_HEIGHT * 0.04,
   },
-  // Image Section
   imageSection: {
     marginTop: SCREEN_HEIGHT * 0.025,
     marginBottom: SCREEN_HEIGHT * 0.02,
@@ -333,7 +382,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#F0F0F0',
   },
-  // Section Styles
   section: {
     paddingHorizontal: SCREEN_WIDTH * 0.04,
     marginBottom: SCREEN_HEIGHT * 0.02,
@@ -351,7 +399,6 @@ const styles = StyleSheet.create({
     lineHeight: SCREEN_WIDTH * 0.06,
     textAlign: 'center',
   },
-  // Meal Days
   mealDaysContainer: {
     paddingHorizontal: SCREEN_WIDTH * 0.04,
   },
@@ -385,6 +432,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  monthText: {
+    fontSize: SCREEN_WIDTH * 0.03,
+    color: '#fff',
+    marginTop: -SCREEN_WIDTH * 0.01,
+    textTransform: 'uppercase',
+  },
   mealInfo: {
     flex: 1,
   },
@@ -410,8 +463,22 @@ const styles = StyleSheet.create({
   },
   completedBadge: {
     marginLeft: SCREEN_WIDTH * 0.02,
+    zIndex: 1,
   },
-  // No Meals
+  disabledMealDay: {
+    opacity: 0.5,
+  },
+  disabledOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   noMealsContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -427,7 +494,20 @@ const styles = StyleSheet.create({
     marginTop: SCREEN_HEIGHT * 0.015,
     textAlign: 'center',
   },
-  // Error Styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+  },
+  loadingAnimation: {
+    marginBottom: SCREEN_HEIGHT * 0.02,
+  },
+  loadingText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    color: '#666',
+    fontWeight: '500',
+  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',

@@ -19,8 +19,8 @@ import {
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/context/UserAuthContext';
-import { useRouter } from 'expo-router';
-import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { MaterialIcons, Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Logo from '@/assets/images/Logo.png';
 
@@ -40,6 +40,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function Workouts() {
   const [dailyWorkouts, setDailyWorkouts] = useState<DailyWorkout[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true); // New loading state
   const router = useRouter();
   const { user } = useUserAuth();
   const fadeAnim = useState(new Animated.Value(0))[0];
@@ -48,11 +49,12 @@ export default function Workouts() {
   const fetchWorkoutPlan = useCallback(async () => {
     if (!user || !user.id) {
       router.push('/Login');
+      setLoading(false); // Stop loading if no user
       return;
     }
 
     try {
-      // Step 1: Fetch the active workout plan
+      setRefreshing(true);
       const { data: planData, error: planError } = await supabase
         .from('WorkoutPlans')
         .select('id')
@@ -64,7 +66,6 @@ export default function Workouts() {
         throw new Error('No active workout plan found');
       }
 
-      // Step 2: Fetch daily workouts
       const { data: dailyData, error: dailyError } = await supabase
         .from('DailyWorkouts')
         .select('id, day_name, day_number, daily_workout_date, focus, total_calories_burned, total_duration_min')
@@ -77,10 +78,11 @@ export default function Workouts() {
 
       if (!dailyData || dailyData.length === 0) {
         setDailyWorkouts([]);
+        setRefreshing(false);
+        setLoading(false); // Stop loading
         return;
       }
 
-      // Step 3: Fetch total exercises per day from Workouts table
       const dailyWorkoutIds = dailyData.map((day) => day.id);
       const { data: workoutsData, error: workoutsError } = await supabase
         .from('Workouts')
@@ -91,14 +93,12 @@ export default function Workouts() {
         throw new Error('Error fetching workouts: ' + workoutsError.message);
       }
 
-      // Count total exercises per day
       const totalExercisesPerDay: { [key: string]: number } = {};
       workoutsData.forEach((workout) => {
         const dailyWorkoutId = workout.daily_workout_id.toString();
         totalExercisesPerDay[dailyWorkoutId] = (totalExercisesPerDay[dailyWorkoutId] || 0) + 1;
       });
 
-      // Step 4: Fetch completed/skipped exercises from ExerciseCompletions table
       const { data: completionsData, error: completionsError } = await supabase
         .from('ExerciseCompletions')
         .select('daily_workout_id, status')
@@ -109,14 +109,12 @@ export default function Workouts() {
         throw new Error('Error fetching exercise completions: ' + completionsError.message);
       }
 
-      // Count completed/skipped exercises per day
       const completedExercisesPerDay: { [key: string]: number } = {};
       completionsData.forEach((completion) => {
         const dailyWorkoutId = completion.daily_workout_id.toString();
         completedExercisesPerDay[dailyWorkoutId] = (completedExercisesPerDay[dailyWorkoutId] || 0) + 1;
       });
 
-      // Step 5: Add isAllCompletedOrSkipped field to each daily workout
       const updatedDailyWorkouts = dailyData.map((day) => {
         const dailyWorkoutId = day.id.toString();
         const totalExercises = totalExercisesPerDay[dailyWorkoutId] || 0;
@@ -130,7 +128,6 @@ export default function Workouts() {
 
       setDailyWorkouts(updatedDailyWorkouts);
 
-      // Animate on successful load
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -143,21 +140,28 @@ export default function Workouts() {
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(() => setLoading(false)); // Stop loading after animation
     } catch (error: any) {
       console.error('Error fetching workout plan:', error.message);
       setDailyWorkouts([]);
+      setLoading(false); // Stop loading on error
+    } finally {
+      setRefreshing(false);
     }
   }, [user, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchWorkoutPlan();
+    }, [fetchWorkoutPlan])
+  );
 
   useEffect(() => {
     fetchWorkoutPlan();
   }, [fetchWorkoutPlan]);
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
     await fetchWorkoutPlan();
-    setRefreshing(false);
   }, [fetchWorkoutPlan]);
 
   const handleBackPress = () => {
@@ -172,6 +176,23 @@ export default function Workouts() {
       params: { day: dayName, source: 'Workouts' },
     });
   };
+
+  // Loading UI
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Animated.View style={[styles.loadingAnimation, { 
+          transform: [{ rotate: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['0deg', '360deg']
+          }) }]
+        }]}>
+          <FontAwesome5 name="dumbbell" size={SCREEN_WIDTH * 0.1} color="#e45ea9" />
+        </Animated.View>
+        <Text style={styles.loadingText}>Loading your workouts...</Text>
+      </View>
+    );
+  }
 
   if (!user || !user.id) {
     return (
@@ -204,7 +225,6 @@ export default function Workouts() {
 
   return (
     <View style={styles.container}>
-      {/* Custom Header */}
       <Animated.View style={[styles.headerContainer, {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }]
@@ -217,7 +237,6 @@ export default function Workouts() {
         <Text style={styles.usernameText}>{user.username || 'User'}</Text>
       </Animated.View>
 
-      {/* Main Content */}
       <ScrollView 
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
@@ -234,7 +253,6 @@ export default function Workouts() {
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
         }}>
-          {/* Hero Image */}
           <View style={styles.imageSection}>
             <Image 
               source={require('../../assets/images/2.jpg')} 
@@ -243,13 +261,11 @@ export default function Workouts() {
             />
           </View>
 
-          {/* Title Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Workout of the Day</Text>
             <Text style={styles.sectionDescription}>Select a day to view its workout plan</Text>
           </View>
 
-          {/* Workout Days */}
           <View style={styles.workoutDaysContainer}>
             {dailyWorkouts.length > 0 ? (
               dailyWorkouts.map((item) => {
@@ -330,7 +346,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9F9F9',
   },
-  // Header Styles
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -371,11 +386,23 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
-  // Content Styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+  },
+  loadingAnimation: {
+    marginBottom: SCREEN_HEIGHT * 0.02,
+  },
+  loadingText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    color: '#666',
+    fontWeight: '500',
+  },
   contentContainer: {
     paddingBottom: SCREEN_HEIGHT * 0.04,
   },
-  // Image Section
   imageSection: {
     marginTop: SCREEN_HEIGHT * 0.025,
     marginBottom: SCREEN_HEIGHT * 0.02,
@@ -388,7 +415,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#F0F0F0',
   },
-  // Section Styles
   section: {
     paddingHorizontal: SCREEN_WIDTH * 0.04,
     marginBottom: SCREEN_HEIGHT * 0.02,
@@ -406,7 +432,6 @@ const styles = StyleSheet.create({
     lineHeight: SCREEN_WIDTH * 0.06,
     textAlign: 'center',
   },
-  // Workout Days
   workoutDaysContainer: {
     paddingHorizontal: SCREEN_WIDTH * 0.04,
   },
@@ -477,7 +502,6 @@ const styles = StyleSheet.create({
   completedBadge: {
     marginLeft: SCREEN_WIDTH * 0.02,
   },
-  // No Workouts
   noWorkoutsContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -493,7 +517,6 @@ const styles = StyleSheet.create({
     marginTop: SCREEN_HEIGHT * 0.015,
     textAlign: 'center',
   },
-  // Error Styles
   errorContainer: {
     flex: 1,
     justifyContent: 'center',

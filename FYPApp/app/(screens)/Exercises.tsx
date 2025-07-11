@@ -262,7 +262,7 @@ const Exercises: React.FC = () => {
   };
 
   const handlePlayAll = () => {
-    if (!dailyWorkoutId) return; // Already has this check
+    if (!dailyWorkoutId || !isCurrentDay) return; // Disable if not current day
     const structuredExercises = exercises.map(structureExerciseWithRestTimers);
     router.push({
       pathname: '/(screens)/ExercisePlayback',
@@ -276,7 +276,7 @@ const Exercises: React.FC = () => {
   };
 
   const handleResume = () => {
-    if (!dailyWorkoutId) return;
+    if (!dailyWorkoutId || !isCurrentDay) return; // Disable if not current day
     const startIndex = exercises.findIndex((ex) => !completedExerciseIds.includes(ex.id) && !skippedExerciseIds.includes(ex.id));
     const structuredExercises = exercises.map(structureExerciseWithRestTimers);
     router.push({
@@ -291,7 +291,7 @@ const Exercises: React.FC = () => {
   };
 
   const handleRestart = async () => {
-    if (!dailyWorkoutId || !user?.id) return;
+    if (!dailyWorkoutId || !user?.id || !isCurrentDay) return; // Disable if not current day
     try {
       const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
       
@@ -509,7 +509,7 @@ const Exercises: React.FC = () => {
                   <TouchableOpacity
                     style={[styles.actionButton, styles.resumeButton]}
                     onPress={handleResume}
-                    disabled={!dailyWorkoutId}
+                    disabled={!dailyWorkoutId || !isCurrentDay}
                   >
                     <MaterialCommunityIcons 
                       name="play-circle" 
@@ -523,7 +523,7 @@ const Exercises: React.FC = () => {
                 <TouchableOpacity
                   style={[styles.actionButton, styles.restartButton]}
                   onPress={handleRestart}
-                  disabled={!dailyWorkoutId}
+                  disabled={!dailyWorkoutId || !isCurrentDay}
                 >
                   <MaterialCommunityIcons 
                     name="reload" 
@@ -539,20 +539,20 @@ const Exercises: React.FC = () => {
                 style={[
                   styles.actionButton, 
                   styles.playButton,
-                  (!dailyWorkoutId) && styles.disabledButton
+                  (!dailyWorkoutId || !isCurrentDay) && styles.disabledButton
                 ]}
                 onPress={handlePlayAll}
-                disabled={!dailyWorkoutId}
+                disabled={!dailyWorkoutId || !isCurrentDay}
               >
                 <MaterialCommunityIcons 
                   name="play" 
                   size={SCREEN_WIDTH * 0.05} 
-                  color={(!dailyWorkoutId) ? "#aaa" : "#fff"} 
+                  color={(!dailyWorkoutId || !isCurrentDay) ? "#aaa" : "#fff"} 
                   style={styles.buttonIcon}
                 />
                 <Text style={[
                   styles.actionButtonText,
-                  (!dailyWorkoutId) && { color: "#aaa" }
+                  (!dailyWorkoutId || !isCurrentDay) && { color: "#aaa" }
                 ]}>
                   Play All
                 </Text>

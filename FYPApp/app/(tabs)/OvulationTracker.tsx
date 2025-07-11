@@ -24,7 +24,6 @@ import { useUserAuth } from '@/context/UserAuthContext';
 import { supabase } from '@/lib/supabase';
 import { Calendar } from 'react-native-calendars';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -37,7 +36,7 @@ type MenstrualCyclePhase = {
 type UserData = {
   bleeding_days: number | null;
   last_period_date: string | null;
-  cycle_length: number;
+  cycle_length: number | null;
   age: number;
   weight: number;
   height: number;
@@ -45,6 +44,7 @@ type UserData = {
   challenge_days: number;
   preferred_rest_days: string;
   activity_level: string;
+  diseases: string | null;
 };
 
 export default function OvulationTracker() {
@@ -53,17 +53,55 @@ export default function OvulationTracker() {
   const [currentCycleDay, setCurrentCycleDay] = useState<number | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>('Loading...');
   const [refreshing, setRefreshing] = useState(false);
-  const [lastRecalibrationDate, setLastRecalibrationDate] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [initialDataModalVisible, setInitialDataModalVisible] = useState(false);
   const [bleedingDays, setBleedingDays] = useState('');
+  const [cycleLength, setCycleLength] = useState('');
   const [lastPeriodDate, setLastPeriodDate] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [isMenopausal, setIsMenopausal] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
 
+  useEffect(() => {
+    const checkMenopausalStatusAndData = async () => {
+      if (!user?.id) {
+        setIsMenopausal(false);
+        setInitialDataModalVisible(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('User')
+        .select('diseases, bleeding_days, cycle_length, last_period_date')
+        .eq('id', user.id)
+        .single() as { data: UserData | null, error: any };
+      
+      if (error || !data) {
+        console.error('Failed to fetch user data:', error);
+        setIsMenopausal(false);
+        setInitialDataModalVisible(false);
+      } else {
+        const menopausal = data.diseases?.includes('Menopause') || false;
+        setIsMenopausal(menopausal);
+        if (!menopausal) {
+          if (!data.bleeding_days || !data.cycle_length || !data.last_period_date) {
+            setInitialDataModalVisible(true);
+          } else {
+            setBleedingDays(data.bleeding_days.toString() || '');
+            setCycleLength(data.cycle_length.toString() || '');
+            setLastPeriodDate(data.last_period_date || '');
+          }
+        }
+      }
+    };
+    checkMenopausalStatusAndData();
+  }, [user?.id]);
+
   const fetchTodayPhase = async () => {
-    if (!user?.id) {
-      setCurrentPhase('User not logged in');
+    if (!user?.id || isMenopausal) {
+      setCurrentPhase(isMenopausal ? 'Disabled' : 'User not logged in');
+      setCurrentCycleDay(null);
       return;
     }
 
@@ -74,7 +112,7 @@ export default function OvulationTracker() {
         .select('cycle_day, phase', { count: 'exact' })
         .eq('user_id', user.id)
         .eq('date', today)
-        .single() as { data: MenstrualCyclePhase | null, error: any, count: number };
+        .single();
 
       if (error || count === 0) {
         console.log('No data or error:', error?.message);
@@ -102,124 +140,11 @@ export default function OvulationTracker() {
     }
   };
 
-  const recalibrateCycle = async () => {
-    if (!user?.id) return;
-
-    try {
-      const response = await fetch('http://192.168.1.9:5000/api/recalibrate-cycle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Failed to recalibrate cycle:', errorText);
-        return;
-      }
-
-      const result = await response.json();
-      const recalibratedPhases = result.recalibrated_phases;
-
-      if (!recalibratedPhases || !Array.isArray(recalibratedPhases)) {
-        console.error('Invalid recalibrated phases structure:', recalibratedPhases);
-        return;
-      }
-
-      const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-      await supabase
-        .from('MenstrualCyclePhases')
-        .delete()
-        .eq('user_id', user.id)
-        .gte('date', today);
-
-      const insertData = recalibratedPhases.map(phase => ({
-        user_id: user.id,
-        date: phase.date,
-        cycle_day: phase.cycle_day,
-        phase: phase.phase,
-      }));
-
-      const { error: insertError } = await supabase
-        .from('MenstrualCyclePhases')
-        .insert(insertData);
-
-      if (insertError) {
-        console.error('Failed to insert recalibrated phases:', insertError);
-        return;
-      }
-
-      console.log('Successfully updated MenstrualCyclePhases with recalibrated data');
-      const currentDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-      await AsyncStorage.setItem('lastRecalibrationDate', currentDate);
-      setLastRecalibrationDate(currentDate);
-
-      await fetchTodayPhase();
-    } catch (error) {
-      console.error('Error in recalibrateCycle:', error);
-    }
-  };
-
-  const checkAndRecalibrate = async () => {
-    if (!user?.id) return;
-
-    try {
-      const storedDate = await AsyncStorage.getItem('lastRecalibrationDate');
-      setLastRecalibrationDate(storedDate);
-
-      if (!storedDate) {
-        await recalibrateCycle();
-        return;
-      }
-
-      const lastDate = new Date(storedDate);
-      const today = new Date();
-      const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (daysDiff >= 5) {
-        console.log('5 days have passed since last recalibration, recalibrating now...');
-        await recalibrateCycle();
-      }
-    } catch (error) {
-      console.error('Error in checkAndRecalibrate:', error);
-    }
-  };
-
   useEffect(() => {
-    const initialize = async () => {
-      await checkAndRecalibrate();
-      await fetchTodayPhase();
-      const { data, error } = await supabase
-        .from('User')
-        .select('bleeding_days, last_period_date')
-        .eq('id', user?.id)
-        .single() as { data: UserData | null, error: any };
-      if (error || !data) {
-        console.error('Failed to fetch initial user data:', error);
-      } else {
-        setBleedingDays(data.bleeding_days?.toString() || '');
-        setLastPeriodDate(data.last_period_date || '');
-      }
-    };
-    initialize();
-  }, [user?.id]);
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
+    if (!initialDataModalVisible) {
+      fetchTodayPhase();
+    }
+  }, [user?.id, isMenopausal, initialDataModalVisible]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -232,37 +157,65 @@ export default function OvulationTracker() {
       setRefreshing(false);
       console.log('Refresh completed');
     }
-  }, [user?.id]);
-
-  const formatDateToDDMMYYYY = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-');
-    return `${day}-${month}-${year}`;
-  };
+  }, [user?.id, isMenopausal]);
 
   const handleLogPeriod = async () => {
-    if (!user?.id) return;
+    if (!user?.id || isMenopausal) return;
 
     setRefreshing(true);
+
     try {
-      const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-      const formattedToday = formatDateToDDMMYYYY(today);
+      // Get current date in YYYY-MM-DD format
+      const today = new Date();
+      const formattedDate = today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+
+      // First update the User table with the new last_period_date
+      const { error: updateError } = await supabase
+        .from('User')
+        .update({ last_period_date: formattedDate })
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw new Error(`Failed to update last period date: ${updateError.message}`);
+      }
+
+      // Then fetch the updated user data
       const { data: userData, error: userError } = await supabase
         .from('User')
         .select('cycle_length, bleeding_days, age, weight, height, goal, challenge_days, preferred_rest_days, activity_level')
         .eq('id', user.id)
-        .single() as { data: UserData | null, error: any };
+        .single();
 
       if (userError || !userData) {
-        throw new Error('Failed to fetch user data');
+        throw new Error('Failed to fetch updated user data');
       }
 
-      const response = await fetch('http://192.168.1.9:5000/api/predict-cycle', {
+      // Rest of your existing code for generating cycle phases and updating plans...
+      const { data: workoutPlanData, error: workoutError } = await supabase
+        .from('WorkoutPlans')
+        .select('id, start_date')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single();
+
+      if (workoutError || !workoutPlanData) {
+        throw new Error('No active workout plan found.');
+      }
+
+      // Calculate days elapsed and remaining
+      const startDate = new Date(workoutPlanData.start_date);
+      const daysElapsed = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const remainingDays = Math.max(1, userData.challenge_days - daysElapsed);
+
+      // Generate new cycle phases (your existing code)
+      const response = await fetch('http://10.135.64.168:5000/api/generate-cycle-phases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lastPeriodDate: formattedToday,
+          lastPeriodDate: formattedDate,
           cycleLength: userData.cycle_length,
           bleedingDays: userData.bleeding_days,
+          challengeDays: userData.challenge_days,
           age: userData.age,
           weight: userData.weight,
           height: userData.height,
@@ -274,111 +227,39 @@ export default function OvulationTracker() {
         throw new Error(`Failed to predict cycle: ${errorText}`);
       }
 
-      const result = await response.json();
-      const newCyclePhases = result.cycle_phases;
+      const newCyclePhases = await response.json();
 
-      const currentDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-      const { data: currentPhaseData } = await supabase
-        .from('MenstrualCyclePhases')
-        .select('phase')
-        .eq('user_id', user.id)
-        .eq('date', currentDate)
-        .single();
-
-      const isBeforeLuteal = !currentPhaseData || currentPhaseData.phase !== 'Luteal';
-
-      if (isBeforeLuteal) {
-        await supabase
-          .from('MenstrualCyclePhases')
-          .delete()
-          .eq('user_id', user.id);
-
-        const insertData = newCyclePhases.map((phase: any) => ({
-          user_id: user.id,
-          date: phase.date,
-          cycle_day: phase.cycle_day,
-          phase: phase.phase,
-        }));
-
-        await supabase.from('MenstrualCyclePhases').insert(insertData);
-        await supabase
-          .from('User')
-          .update({ last_period_date: today })
-          .eq('id', user.id);
-      } else {
-        const insertData = newCyclePhases.map((phase: any) => ({
-          user_id: user.id,
-          date: phase.date,
-          cycle_day: phase.cycle_day,
-          phase: phase.phase,
-        }));
-
-        await supabase.from('MenstrualCyclePhases').insert(insertData);
-      }
-
-      await supabase
-        .from('User')
-        .update({ last_period_date: today })
-        .eq('id', user.id);
-
-      const { data: workoutPlanData, error: workoutError } = await supabase
-        .from('WorkoutPlans')
-        .select('id, start_date')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .single();
-
-      if (workoutError || !workoutPlanData) {
-        throw new Error('No active workout plan found');
-      }
-
-      const startDate = new Date(workoutPlanData.start_date);
-      const currentDateObj = new Date();
-      const daysElapsed = Math.floor((currentDateObj.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-      const payload = {
-        age: userData.age,
-        activityLevel: userData.activity_level,
-        goal: userData.goal,
-        weight: userData.weight,
-        challengeDays: userData.challenge_days,
-        preferredRestDay: userData.preferred_rest_days,
-        height: userData.height,
-        currentDay: daysElapsed,
-        userId: user.id,
-        workoutPlanId: workoutPlanData.id,
-      };
-
-      const planResponse = await fetch('http://192.168.1.9:5000/api/update-plan', {
+      // Update cycle and plans (your existing code)
+      const planResponse = await fetch('http://10.135.64.168:5000/api/update-cycle-and-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          user_id: user.id,
+          weight: userData.weight,
+          activity_level: userData.activity_level,
+          challenge_days: userData.challenge_days,
+          remaining_days: remainingDays,
+          start_date: workoutPlanData.start_date,
+          last_period_date: formattedDate,  // Use the same formatted date
+          cycle_length: userData.cycle_length,
+          bleeding_days: userData.bleeding_days,
+          cycle_phases: newCyclePhases,
+          age: userData.age,
+          goal: userData.goal,
+          preferred_rest_days: userData.preferred_rest_days,
+          height: userData.height,
+        }),
       });
 
       if (!planResponse.ok) {
-        throw new Error('Faed to update plans');
+        const errorText = await planResponse.text();
+        throw new Error(`Failed to update plans: ${errorText}`);
       }
-
-      const planResult = await planResponse.json();
-      await supabase.rpc('update_user_and_workout_plan', {
-        p_user_id: user.id,
-        p_weight: userData.weight,
-        p_activity_level: userData.activity_level,
-        p_challenge_days: userData.challenge_days,
-        p_workout_plan: planResult.workout_plan,
-        p_meal_plan: planResult.meal_plan,
-        p_start_date: currentDateObj.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-'),
-        p_intensity: planResult.intensity,
-        p_goal: userData.goal,
-        p_last_period_date: today,
-        p_cycle_length: userData.cycle_length,
-        p_bleeding_days: userData.bleeding_days,
-      });
 
       await refreshUser();
       Alert.alert('Success', 'Period logged and plans updated');
       await fetchTodayPhase();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in handleLogPeriod:', error);
       Alert.alert('Error', `Failed to log period: ${error.message}`);
     } finally {
@@ -386,20 +267,34 @@ export default function OvulationTracker() {
     }
   };
 
-  const handleSaveEdit = async () => {
-    if (!user?.id) return;
+  const handleSaveCycleData = async (isInitial: boolean) => {
+    if (!user?.id || isMenopausal) return;
 
     const newBleedingDays = parseInt(bleedingDays);
+    const newCycleLength = parseInt(cycleLength);
     if (isNaN(newBleedingDays) || newBleedingDays < 2 || newBleedingDays > 7) {
       Alert.alert('Error', 'Bleeding days must be between 2 and 7');
       return;
     }
+    if (isNaN(newCycleLength) || newCycleLength < 21 || newCycleLength > 35) {
+      Alert.alert('Error', 'Cycle length must be between 21 and 35 days');
+      return;
+    }
+    if (!lastPeriodDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      Alert.alert('Error', 'Last period date must be in YYYY-MM-DD format');
+      return;
+    }
 
-    setEditModalVisible(false);
+    if (isInitial) {
+      setInitialDataModalVisible(false);
+    } else {
+      setEditModalVisible(false);
+    }
+
     try {
       const { data: userData, error: userError } = await supabase
         .from('User')
-        .select('cycle_length, age, weight, height, goal, activity_level, challenge_days, preferred_rest_days')
+        .select('age, weight, height, goal, activity_level, challenge_days, preferred_rest_days')
         .eq('id', user.id)
         .single() as { data: UserData | null, error: any };
 
@@ -407,15 +302,40 @@ export default function OvulationTracker() {
         throw new Error('Failed to fetch user data');
       }
 
-      const formattedLastPeriodDate = formatDateToDDMMYYYY(lastPeriodDate);
+      if (!userData.challenge_days || !userData.age || !userData.weight || !userData.height) {
+        throw new Error('Missing required user data for cycle and plan update');
+      }
 
-      const response = await fetch('http://192.168.1.9:5000/api/predict-cycle', {
+      const { data: workoutPlanData, error: workoutError } = await supabase
+        .from('WorkoutPlans')
+        .select('id, start_date')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single();
+
+      if (workoutError || !workoutPlanData) {
+        console.error('DEBUG: Error fetching workout plan:', workoutError?.message || 'No workout plan');
+        throw new Error('No active workout plan found.');
+      }
+
+      console.log('DEBUG: Fetched workout plan:', {
+        id: workoutPlanData.id,
+        start_date: workoutPlanData.start_date
+      });
+
+      const startDate = new Date(workoutPlanData.start_date);
+      const currentDateObj = new Date();
+      const daysElapsed = Math.floor((currentDateObj.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const remainingDays = Math.max(1, userData.challenge_days - daysElapsed);
+
+      const response = await fetch('http://10.135.64.168:5000/api/generate-cycle-phases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lastPeriodDate: formattedLastPeriodDate,
-          cycleLength: userData.cycle_length,
+          lastPeriodDate: lastPeriodDate,
+          cycleLength: newCycleLength,
           bleedingDays: newBleedingDays,
+          challengeDays: userData.challenge_days,
           age: userData.age,
           weight: userData.weight,
           height: userData.height,
@@ -427,128 +347,81 @@ export default function OvulationTracker() {
         throw new Error(`Failed to predict cycle: ${errorText}`);
       }
 
-      const result = await response.json();
-      const newCyclePhases = result.cycle_phases;
+      const newCyclePhases = await response.json();
+      console.log('Cycle phases generated:', newCyclePhases);
 
-      const currentDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-      const { data: currentPhaseData } = await supabase
-        .from('MenstrualCyclePhases')
-        .select('phase')
-        .eq('user_id', user.id)
-        .eq('date', currentDate)
-        .single();
-
-      const isBeforeLuteal = !currentPhaseData || currentPhaseData.phase !== 'Luteal';
-
-      if (isBeforeLuteal) {
-        await supabase
-          .from('MenstrualCyclePhases')
-          .delete()
-          .eq('user_id', user.id);
-
-        const insertData = newCyclePhases.map((phase: any) => ({
-          user_id: user.id,
-          date: phase.date,
-          cycle_day: phase.cycle_day,
-          phase: phase.phase,
-        }));
-
-        await supabase.from('MenstrualCyclePhases').insert(insertData);
-        await supabase
-          .from('User')
-          .update({ last_period_date: lastPeriodDate, bleeding_days: newBleedingDays })
-          .eq('id', user.id);
-      } else {
-        const insertData = newCyclePhases.map((phase: any) => ({
-          user_id: user.id,
-          date: phase.date,
-          cycle_day: phase.cycle_day,
-          phase: phase.phase,
-        }));
-
-        await supabase.from('MenstrualCyclePhases').insert(insertData);
+      if (!Array.isArray(newCyclePhases)) {
+        console.error('newCyclePhases is not an array:', newCyclePhases);
+        throw new Error('Invalid cycle phases data received from server');
       }
 
-      await supabase
-        .from('User')
-        .update({ last_period_date: lastPeriodDate })
-        .eq('id', user.id);
-
-      const { data: workoutPlanData, error: workoutError } = await supabase
-        .from('WorkoutPlans')
-        .select('id, start_date')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .single();
-
-      if (workoutError || !workoutPlanData) {
-        throw new Error('No active workout plan found');
-      }
-
-      const startDate = new Date(workoutPlanData.start_date);
-      const currentDateObj = new Date();
-      const daysElapsed = Math.floor((currentDateObj.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-      const payload = {
-        age: userData.age,
-        activityLevel: userData.activity_level,
-        goal: userData.goal,
+      const planPayload = {
+        user_id: user.id,
         weight: userData.weight,
-        challengeDays: userData.challenge_days,
-        preferredRestDay: userData.preferred_rest_days,
+        activity_level: userData.activity_level,
+        challenge_days: userData.challenge_days,
+        remaining_days: remainingDays,
+        start_date: workoutPlanData.start_date,
+        last_period_date: lastPeriodDate,
+        cycle_length: newCycleLength,
+        bleeding_days: newBleedingDays,
+        cycle_phases: newCyclePhases,
+        age: userData.age,
+        goal: userData.goal,
+        preferred_rest_days: userData.preferred_rest_days,
         height: userData.height,
-        currentDay: daysElapsed,
-        userId: user.id,
-        workoutPlanId: workoutPlanData.id,
       };
 
-      const planResponse = await fetch('http://192.168.1.9:5000/api/update-plan', {
+      console.log('Payload sent to /api/update-cycle-and-plans:', planPayload);
+
+      const planResponse = await fetch('http://10.135.64.168:5000/api/update-cycle-and-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(planPayload),
       });
 
       if (!planResponse.ok) {
-        throw new Error('Failed to update plans');
+        const errorText = await planResponse.text();
+        throw new Error(`Failed to update plans: ${errorText}`);
       }
 
       const planResult = await planResponse.json();
-      await supabase.rpc('update_user_and_workout_plan', {
-        p_user_id: user.id,
-        p_weight: userData.weight,
-        p_activity_level: userData.activity_level,
-        p_challenge_days: userData.challenge_days,
-        p_workout_plan: planResult.workout_plan,
-        p_meal_plan: planResult.meal_plan,
-        p_start_date: currentDateObj.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-'),
-        p_intensity: planResult.intensity,
-        p_goal: userData.goal,
-        p_last_period_date: lastPeriodDate,
-        p_cycle_length: userData.cycle_length,
-        p_bleeding_days: newBleedingDays,
-      });
+      console.log('Update cycle and plans response:', planResult);
 
       await refreshUser();
-      Alert.alert('Success', 'Cycle data updated and plans regenerated');
+      Alert.alert('Success', 'Cycle data saved and plans updated');
       await fetchTodayPhase();
-    } catch (error) {
-      console.error('Error in handleSaveEdit:', error);
-      Alert.alert('Error', `Failed to update cycle data: ${error.message}`);
+    } catch (error: any) {
+      console.error('Error in handleSaveCycleData:', error);
+      Alert.alert('Error', `Failed to save cycle data: ${error.message}`);
     }
   };
 
-  const handleEditDataPress = () => {
+  const handleEditDataPress = async () => {
+    if (isMenopausal) {
+      Alert.alert('Info', 'This feature is not available for menopausal users');
+      return;
+    }
+    
+    // Fetch current data before showing modal
+    await fetchCycleData();
     setEditModalVisible(true);
   };
 
   const handleHistoryPress = () => {
+    if (isMenopausal) {
+      Alert.alert('Info', 'This feature is not available for menopausal users');
+      return;
+    }
     router.push('/(screens)/PeriodsCalendar');
   };
 
   const onDayPress = (day: any) => {
-    const selectedDate = day.dateString;
-    setLastPeriodDate(selectedDate);
-    setShowCalendar(false);
+    if (!isMenopausal) {
+      const selectedDate = day.dateString;
+      setLastPeriodDate(selectedDate);
+      setShowCalendar(false);
+    }
   };
 
   const handleBackPress = () => {
@@ -563,124 +436,165 @@ export default function OvulationTracker() {
     }]}>
       <Image
         source={require('../../assets/images/Logo.png')}
-        style={styles.logo}
+        style={styles.logoImage}
       />
       <Text style={styles.headerText}>Ovulation Tracker</Text>
       <Text style={styles.usernameText}>{user?.username || 'User'}</Text>
     </Animated.View>
   );
 
-  const renderLogPeriodSection = () => (
-    <View style={styles.logPeriodCard}>
-      <View style={styles.sectionHeader}>
-        <MaterialCommunityIcons 
-          name="water" 
-          size={SCREEN_WIDTH * 0.06} 
-          color="#e45ea9" 
-        />
-        <Text style={styles.sectionTitle}>Period Tracking</Text>
-      </View>
-      
-      <Text style={styles.infoDescription}>
-        Mark today as the start of your menstruation to update your cycle dates and plans.
-      </Text>
-      
-      <TouchableOpacity 
-        style={styles.primaryButton}
-        onPress={handleLogPeriod}
-      >
-        <MaterialCommunityIcons 
-          name="calendar-plus" 
-          size={SCREEN_WIDTH * 0.05} 
-          color="#fff" 
-        />
-        <Text style={styles.primaryButtonText}>Log Period Start</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderContent = () => {
+    if (isMenopausal) {
+      return (
+        <View style={styles.disabledContainer}>
+          <MaterialCommunityIcons 
+            name="account-cancel" 
+            size={SCREEN_WIDTH * 0.15} 
+            color="#e45ea9" 
+          />
+          <Text style={styles.disabledText}>
+            This feature is not available for menopausal users
+          </Text>
+        </View>
+      );
+    }
 
-  const renderPhaseSection = () => (
-    <View style={styles.phaseContainer}>
-      <View style={styles.phaseHeader}>
-        <MaterialCommunityIcons 
-          name="calendar-heart" 
-          size={SCREEN_WIDTH * 0.08} 
-          color="#e45ea9" 
-        />
-        <Text style={styles.phaseDate}>
-          {new Date().toLocaleDateString('en-US', { 
-            month: 'long', 
-            day: 'numeric', 
-            year: 'numeric' 
-          })}
-        </Text>
-      </View>
-      
-      <View style={styles.phaseContent}>
-        <Text style={styles.phaseTitle}>
-          {currentPhase === 'Phase data not available' && currentCycleDay === null
-            ? 'Cycle Tracking'
-            : currentPhase === 'Loading...' || currentPhase === 'Error fetching phase'
-            ? currentPhase
-            : `${currentPhase} Phase`}
-        </Text>
-        {currentCycleDay !== null && (
-          <Text style={styles.cycleDayText}>Day {currentCycleDay} of cycle</Text>
-        )}
-      </View>
-    </View>
-  );
+    return (
+      <Animated.View style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      }}>
+        <View style={styles.phaseContainer}>
+          <View style={styles.phaseHeader}>
+            <MaterialCommunityIcons 
+              name="calendar-heart" 
+              size={SCREEN_WIDTH * 0.08} 
+              color="#e45ea9" 
+            />
+            <Text style={styles.phaseDate}>
+              {new Date().toLocaleDateString('en-US', { 
+                month: 'long', 
+                day: 'numeric', 
+                year: 'numeric' 
+              })}
+            </Text>
+          </View>
+          
+          <View style={styles.phaseContent}>
+            <Text style={styles.phaseTitle}>
+              {currentPhase === 'Phase data not available' && currentCycleDay === null
+                ? 'Cycle Tracking'
+                : currentPhase === 'Loading...' || currentPhase === 'Error fetching phase'
+                ? currentPhase
+                : `${currentPhase} Phase`}
+            </Text>
+            {currentCycleDay !== null && (
+              <Text style={styles.cycleDayText}>Day {currentCycleDay} of cycle</Text>
+            )}
+          </View>
+        </View>
 
-  const renderActionsSection = () => (
-    <View style={styles.actionsContainer}>
-      <TouchableOpacity 
-        style={styles.secondaryButton}
-        onPress={handleEditDataPress}
-      >
-        <MaterialCommunityIcons 
-          name="pencil" 
-          size={SCREEN_WIDTH * 0.05} 
-          color="#e45ea9" 
-        />
-        <Text style={styles.secondaryButtonText}>Edit Cycle Data</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.secondaryButton}
-        onPress={handleHistoryPress}
-      >
-        <MaterialCommunityIcons 
-          name="calendar-month" 
-          size={SCREEN_WIDTH * 0.05} 
-          color="#e45ea9" 
-        />
-        <Text style={styles.secondaryButtonText}>View History</Text>
-      </TouchableOpacity>
-    </View>
-  );
+        <View style={styles.logPeriodContainer}>
+          <View style={styles.sectionHeader}>
+            <MaterialCommunityIcons 
+              name="water" 
+              size={SCREEN_WIDTH * 0.06} 
+              color="#e45ea9" 
+            />
+            <Text style={styles.sectionTitle}>Period Tracking</Text>
+          </View>
+          
+          <Text style={styles.infoDescription}>
+            Mark today as the start of your menstruation to update your cycle dates and plans.
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.primaryButton, isMenopausal && styles.disabledButton]}
+            onPress={isMenopausal ? undefined : handleLogPeriod}
+            disabled={isMenopausal}
+          >
+            <MaterialCommunityIcons 
+              name="calendar-plus" 
+              size={SCREEN_WIDTH * 0.05} 
+              color="#fff" 
+            />
+            <Text style={styles.primaryButtonText}>Log Period Start</Text>
+          </TouchableOpacity>
+        </View>
 
-  const renderEditModal = () => (
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity 
+            style={[styles.secondaryButton, isMenopausal && styles.disabledButton]}
+            onPress={isMenopausal ? undefined : handleEditDataPress}
+            disabled={isMenopausal}
+          >
+            <MaterialCommunityIcons 
+              name="pencil" 
+              size={SCREEN_WIDTH * 0.05} 
+              color={isMenopausal ? '#999' : '#e45ea9'} 
+            />
+            <Text style={[styles.secondaryButtonText, isMenopausal && { color: '#999' }]}>
+              Edit Cycle Data
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.secondaryButton, isMenopausal && styles.disabledButton]}
+            onPress={isMenopausal ? undefined : handleHistoryPress}
+            disabled={isMenopausal}
+          >
+            <MaterialCommunityIcons 
+              name="calendar-month" 
+              size={SCREEN_WIDTH * 0.05} 
+              color={isMenopausal ? '#999' : '#e45ea9'} 
+            />
+            <Text style={[styles.secondaryButtonText, isMenopausal && { color: '#999' }]}>
+              View History
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+  };
+
+  const renderCycleDataModal = (isInitial: boolean) => (
     <Modal
       animationType="slide"
       transparent={true}
-      visible={editModalVisible}
-      onRequestClose={() => setEditModalVisible(false)}
+      visible={isInitial ? initialDataModalVisible : editModalVisible}
+      onRequestClose={() => {
+        if (isInitial) {
+          setInitialDataModalVisible(false);
+          router.back();
+        } else {
+          setEditModalVisible(false);
+        }
+      }}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Pressable 
-                onPress={() => setEditModalVisible(false)}
+                onPress={() => {
+                  if (isInitial) {
+                    setInitialDataModalVisible(false);
+                    router.back();
+                  } else {
+                    setEditModalVisible(false);
+                  }
+                }}
                 style={styles.modalBackButton}
               >
                 <Ionicons name="chevron-back" size={SCREEN_WIDTH * 0.06} color="#e45ea9" />
               </Pressable>
-              <Text style={styles.modalTitle}>Edit Cycle Data</Text>
+              <Text style={styles.modalTitle}>
+                {isInitial ? 'Enter Cycle Data' : 'Edit Cycle Data'}
+              </Text>
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Last Period Date</Text>
+              <Text style={styles.inputLabel}>Last Period Date (YYYY-MM-DD)</Text>
               <View style={styles.dateInputContainer}>
                 <TextInput
                   style={styles.dateInput}
@@ -692,24 +606,41 @@ export default function OvulationTracker() {
                 <Pressable 
                   onPress={() => setShowCalendar(true)}
                   style={styles.calendarButton}
+                  disabled={isMenopausal}
                 >
-                  <MaterialIcons name="calendar-today" size={SCREEN_WIDTH * 0.06} color="#e45ea9" />
+                  <MaterialIcons 
+                    name="calendar-today" 
+                    size={SCREEN_WIDTH * 0.06} 
+                    color={isMenopausal ? '#999' : '#e45ea9'} 
+                  />
                 </Pressable>
               </View>
 
-              <Text style={styles.inputLabel}>Bleeding Days (2-7)</Text>
+              <Text style={styles.inputLabel}>Cycle Length (21-35 days)</Text>
+              <TextInput
+                style={styles.input}
+                value={cycleLength}
+                onChangeText={setCycleLength}
+                keyboardType="numeric"
+                placeholder="Enter cycle length"
+                editable={!isMenopausal}
+              />
+
+              <Text style={styles.inputLabel}>Bleeding Days (2-7 days)</Text>
               <TextInput
                 style={styles.input}
                 value={bleedingDays}
                 onChangeText={setBleedingDays}
                 keyboardType="numeric"
-                placeholder="Enter days"
+                placeholder="Enter bleeding days"
+                editable={!isMenopausal}
               />
             </View>
 
             <TouchableOpacity 
-              style={styles.saveButton}
-              onPress={handleSaveEdit}
+              style={[styles.saveButton, isMenopausal && styles.disabledButton]}
+              onPress={() => handleSaveCycleData(isInitial)}
+              disabled={isMenopausal}
             >
               <Text style={styles.saveButtonText}>Save Changes</Text>
             </TouchableOpacity>
@@ -719,6 +650,13 @@ export default function OvulationTracker() {
 
       {showCalendar && (
         <View style={styles.calendarModal}>
+          <Pressable 
+            style={styles.calendarCloseButton}
+            onPress={() => setShowCalendar(false)}
+          >
+            <Ionicons name="close" size={24} color="#e45ea9" />
+          </Pressable>
+          
           <Calendar
             onDayPress={onDayPress}
             markedDates={{
@@ -730,6 +668,7 @@ export default function OvulationTracker() {
               arrowColor: '#e45ea9',
             }}
           />
+          
           <TouchableOpacity
             style={styles.closeCalendarButton}
             onPress={() => setShowCalendar(false)}
@@ -740,6 +679,58 @@ export default function OvulationTracker() {
       )}
     </Modal>
   );
+
+  const fetchCycleData = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('User')
+        .select('last_period_date, cycle_length, bleeding_days')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setLastPeriodDate(data.last_period_date || '');
+        setCycleLength(data.cycle_length?.toString() || '');
+        setBleedingDays(data.bleeding_days?.toString() || '');
+      }
+    } catch (error) {
+      console.error('Error fetching cycle data:', error);
+    }
+  };
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Animated.View style={[styles.loadingAnimation, { transform: [{ rotate: fadeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['0deg', '360deg']
+        }) }] }]}>
+          <FontAwesome5 name="calendar-alt" size={SCREEN_WIDTH * 0.1} color="#e45ea9" />
+        </Animated.View>
+        <Text style={styles.loadingText}>Loading tracker...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -756,18 +747,11 @@ export default function OvulationTracker() {
           />
         }
       >
-        <Animated.View style={{
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim },],
-          marginTop: SCREEN_HEIGHT * 0.06,
-        }}>
-          {renderPhaseSection()}
-          {renderLogPeriodSection()}
-          {renderActionsSection()}
-        </Animated.View>
+        {renderContent()}
       </ScrollView>
 
-      {renderEditModal()}
+      {renderCycleDataModal(false)}
+      {renderCycleDataModal(true)}
     </View>
   );
 }
@@ -781,7 +765,6 @@ const styles = StyleSheet.create({
     padding: SCREEN_WIDTH * 0.05,
     paddingBottom: SCREEN_HEIGHT * 0.1,
   },
-  // Header Styles
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -807,7 +790,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
     flex: 1,
   },
-  logo: {
+  logoImage: {
     width: SCREEN_WIDTH * 0.12,
     height: SCREEN_WIDTH * 0.12,
     borderRadius: SCREEN_WIDTH * 0.05,
@@ -818,12 +801,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-  backButton: {
-    padding: SCREEN_WIDTH * 0.02,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  // Phase Section
   phaseContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -865,8 +842,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: SCREEN_HEIGHT * 0.02,
   },
-  // Log Period Section
-  logPeriodCard: {
+  logPeriodContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: SCREEN_WIDTH * 0.05,
@@ -917,7 +893,6 @@ const styles = StyleSheet.create({
     marginLeft: SCREEN_WIDTH * 0.02,
     fontFamily: 'Inter-SemiBold',
   },
-  // Actions Section
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -943,7 +918,6 @@ const styles = StyleSheet.create({
     marginLeft: SCREEN_WIDTH * 0.02,
     fontFamily: 'Inter-SemiBold',
   },
-  // Modal Styles
   modalBackground: {
     flex: 1,
     justifyContent: 'center',
@@ -1003,6 +977,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: SCREEN_HEIGHT * 0.015,
     fontSize: SCREEN_WIDTH * 0.04,
+    marginBottom: SCREEN_HEIGHT * 0.02,
   },
   saveButton: {
     backgroundColor: '#e45ea9',
@@ -1020,7 +995,6 @@ const styles = StyleSheet.create({
     fontSize: SCREEN_WIDTH * 0.04,
     fontWeight: '600',
   },
-  // Calendar Modal
   calendarModal: {
     position: 'absolute',
     top: 0,
@@ -1038,9 +1012,58 @@ const styles = StyleSheet.create({
     marginTop: SCREEN_HEIGHT * 0.02,
     alignItems: 'center',
   },
+  calendarCloseButton: {
+    position: 'absolute',
+    top: SCREEN_HEIGHT * 0.05,
+    right: SCREEN_WIDTH * 0.05,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: 20,
+    padding: 10,
+  },
   closeCalendarText: {
     color: '#fff',
     fontSize: SCREEN_WIDTH * 0.04,
     fontWeight: '600',
+  },
+  disabledContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SCREEN_WIDTH * 0.05,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginTop: SCREEN_HEIGHT * 0.03,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  disabledText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: SCREEN_WIDTH * 0.06,
+  },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: '#ccc',
+    borderColor: '#999',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+  },
+  loadingAnimation: {
+    marginBottom: SCREEN_HEIGHT * 0.02,
+  },
+  loadingText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    color: '#666',
+    fontWeight: '500',
   },
 });

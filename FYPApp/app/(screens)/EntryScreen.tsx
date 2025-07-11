@@ -85,15 +85,17 @@ const EntryScreen: React.FC = () => {
             <Text style={styles.buttonText}>Let's Get Started</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.loginContainer}
-            onPress={handleLoginPress}
-          >
-            <Text style={styles.loginText}>
-              Already have an account?{' '}
+          <Text style={styles.loginText}>
+            Already have an account?{' '}
+            <TouchableOpacity
+              onPress={handleLoginPress}
+            >
               <Text style={styles.loginLink}>Login</Text>
-            </Text>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </Text>
+          
+            
+         
         </Animated.View>
       </View>
     </ImageBackground>
@@ -158,6 +160,7 @@ const styles = StyleSheet.create({
     marginTop: SCREEN_HEIGHT * 0.02,
   },
   loginText: {
+    marginTop: 20,
     fontSize: SCREEN_WIDTH * 0.04,
     color: '#fff',
     textAlign: 'center',
@@ -167,6 +170,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
     textDecorationColor: '#e45ea9',
+    marginBottom: -5,
   },
 });
 

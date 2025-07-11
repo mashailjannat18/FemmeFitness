@@ -1,9 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, Pressable, PressableStateCallbackType } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, Pressable, PressableStateCallbackType, Dimensions, Image } from "react-native";
 import { useRouter } from "expo-router"; 
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { setUserData } from "@/datafiles/userData";
-import { Dimensions, Image } from 'react-native';
 import Biceps from '../../assets/images/5.png';
 import * as Haptics from 'expo-haptics';
 
@@ -17,21 +16,30 @@ const Question6: React.FC = () => {
 
   const toggleArea = (area: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
     if (area === "Full Body") {
-      if (!selectedAreas.includes("Full Body")) {
-        setSelectedAreas(["Full Body"]);
-      } else {
-        setSelectedAreas((prevAreas) => prevAreas.filter((a) => a !== "Full Body"));
-      }
+      setSelectedAreas(prev => {
+        // If "Full Body" is already selected, remove it
+        if (prev.includes("Full Body")) {
+          return [];
+        }
+        // Otherwise select only "Full Body"
+        return ["Full Body"];
+      });
     } else {
-      if (selectedAreas.includes("Full Body")) {
-        return;
-      }
-      if (selectedAreas.includes(area)) {
-        setSelectedAreas((prevAreas) => prevAreas.filter((a) => a !== area));
-      } else {
-        setSelectedAreas((prevAreas) => [...prevAreas, area]);
-      }
+      setSelectedAreas(prev => {
+        // Remove "Full Body" if it was selected
+        let filtered = prev.filter(a => a !== "Full Body");
+        
+        if (filtered.includes(area)) {
+          // Remove the area if already selected
+          filtered = filtered.filter(a => a !== area);
+        } else {
+          // Add the area to selection
+          filtered = [...filtered, area];
+        }
+        return filtered;
+      });
     }
     animateSelection();
   };
@@ -56,7 +64,9 @@ const Question6: React.FC = () => {
       Alert.alert("Selection Required", "Please select at least one area to focus on.");
       return;
     }
-    setUserData('areasOfFocus', selectedAreas);  
+    // Convert selected areas to a comma-separated string
+    const areasString = selectedAreas.includes("Full Body") ? "Full Body" : selectedAreas.join(",");
+    setUserData('areasOfFocus', areasString);  
     router.push("/(screens)/Question7");
   };
 
@@ -84,36 +94,51 @@ const Question6: React.FC = () => {
           />
         </View>
 
-        <Text style={styles.subHeader}>Which areas do you want to focus on?</Text>
+        <Text style={styles.subHeader}>Which area do you want to focus on?</Text>
         
         <View style={styles.optionsContainer}>
-          {areas.map((area) => (
-            <TouchableOpacity
-              key={area}
-              style={[
-                styles.option,
-                selectedAreas.includes(area) && styles.selectedOption,
-                { transform: [{ scale: selectedAreas.includes(area) ? scaleValue : 1 }] },
-              ]}
-              onPress={() => toggleArea(area)}
-            >
-              <MaterialIcons
-                name={
-                  area === "Arms" ? "fitness-center" : 
-                  area === "Stomach" ? "spa" : 
-                  area === "Hips" ? "directions-run" : 
-                  area === "Legs" ? "accessibility" : 
-                  "person"
-                }
-                size={SCREEN_WIDTH * 0.06}
-                color={selectedAreas.includes(area) ? "#fff" : "#e45ea9"}
-                style={styles.icon}
-              />
-              <Text style={[styles.optionText, selectedAreas.includes(area) && styles.selectedText]}>
-                {area}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {areas.map((area) => {
+            const isSelected = selectedAreas.includes(area);
+            const isDisabled = selectedAreas.includes("Full Body") && area !== "Full Body";
+            
+            return (
+              <TouchableOpacity
+                key={area}
+                style={[
+                  styles.option,
+                  isSelected && styles.selectedOption,
+                  isDisabled && styles.disabledOption,
+                  { transform: [{ scale: isSelected ? scaleValue : 1 }] },
+                ]}
+                onPress={() => toggleArea(area)}
+                disabled={isDisabled}
+              >
+                <MaterialIcons
+                  name={
+                    area === "Arms" ? "fitness-center" : 
+                    area === "Stomach" ? "spa" : 
+                    area === "Hips" ? "directions-run" : 
+                    area === "Legs" ? "accessibility" : 
+                    "person"
+                  }
+                  size={SCREEN_WIDTH * 0.06}
+                  color={
+                    isDisabled ? "#ccc" :
+                    isSelected ? "#fff" : 
+                    "#e45ea9"
+                  }
+                  style={styles.icon}
+                />
+                <Text style={[
+                  styles.optionText, 
+                  isSelected && styles.selectedText,
+                  isDisabled && styles.disabledText
+                ]}>
+                  {area}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.buttonContainer}>
@@ -213,8 +238,11 @@ const styles = StyleSheet.create({
     shadowColor: '#e45ea9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 6, 
     elevation: 6,
+  },
+  disabledOption: {
+    opacity: 0.6,
   },
   icon: {
     marginBottom: SCREEN_HEIGHT * 0.01,
@@ -227,6 +255,9 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     color: "#fff",
+  },
+  disabledText: {
+    color: "#ccc",
   },
   buttonContainer: {
     flexDirection: "row",

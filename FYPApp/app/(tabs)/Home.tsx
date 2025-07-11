@@ -80,15 +80,14 @@ interface CircularProgressProps {
 
 const CircularProgress: React.FC<CircularProgressProps> = ({
   progress,
-  size = 160, // Default size, will be overridden by dynamic calculation
-  strokeWidth = 16, // Default strokeWidth, will be scaled
+  size = 160,
+  strokeWidth = 16,
   gradientId,
   displayText,
 }): JSX.Element => {
-  // Calculate size as 70% of the card width to ensure it fits comfortably
-  const cardWidth = SCREEN_WIDTH * 0.48 - SCREEN_WIDTH * 0.08; // Card width (48%) minus padding (4% each side)
-  const dynamicSize = cardWidth * 0.7; // SVG takes 70% of card width
-  const dynamicStrokeWidth = dynamicSize * 0.1; // Stroke width is 10% of SVG size
+  const cardWidth = SCREEN_WIDTH * 0.48 - SCREEN_WIDTH * 0.08;
+  const dynamicSize = cardWidth * 0.7;
+  const dynamicStrokeWidth = dynamicSize * 0.1;
   const radius = (dynamicSize - dynamicStrokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
@@ -154,7 +153,7 @@ const CircularProgress: React.FC<CircularProgressProps> = ({
         >
           <Text
             style={{
-              fontSize: dynamicSize * 0.10, // Font size is 12% of SVG size for readability
+              fontSize: dynamicSize * 0.10,
               fontWeight: '600',
               color:
                 gradientId === 'caloriesBurntGradient'
@@ -240,6 +239,7 @@ const getTodayDate = () => {
 };
 
 export default function Home() {
+  const [userGoal, setUserGoal] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(getCurrentMonth());
   const [dailyWorkout, setDailyWorkout] = useState<DailyWorkout | null>(null);
   const [dailyMeal, setDailyMeal] = useState<DailyMeal | null>(null);
@@ -275,6 +275,7 @@ export default function Home() {
       router.push('/Login');
       return;
     }
+    fetchUserGoal();
     fetchStreakAndCompletions();
   }, [user, router]);
 
@@ -317,7 +318,7 @@ export default function Home() {
         if (!user?.id) return;
         const localDate = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
         const { error } = await supabase.rpc('reset_streak_local', { current_local_date: localDate });
-        if (error) console.error('Error resetting streak:', error.message);
+        if (error) console.log('Error resetting streak:', error.message);
         else await fetchStreakAndCompletions();
       };
 
@@ -457,6 +458,25 @@ export default function Home() {
       setMarkedDates(newMarkedDates);
     } catch (error: any) {
       console.error('Error in fetchStreakAndCompletions:', error.message);
+    }
+  };
+
+  const fetchUserGoal = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('User')
+        .select('goal')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      
+      setUserGoal(data?.goal || 'No goal set');
+    } catch (error) {
+      console.error('Error fetching user goal:', error);
+      setUserGoal('Error loading goal');
     }
   };
 
@@ -766,6 +786,8 @@ export default function Home() {
       setStreak(0);
       setMarkedDates({});
     }
+
+    // fetchWorkoutData function
   };
 
   const fetchSleepHours = async (today: string) => {
@@ -1040,6 +1062,17 @@ export default function Home() {
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
         }}>
+          <View style={styles.goalContainer}>
+            <View style={styles.goalHeader}>
+              <MaterialCommunityIcons 
+                name="target" 
+                size={SCREEN_WIDTH * 0.06} 
+                color="#e45ea9" 
+              />
+              <Text style={styles.goalTitle}>My Fitness Goal: </Text>
+              <Text style={styles.goalText}>{userGoal}</Text>
+            </View>
+          </View>
           {/* Streak Card */}
           <View style={[styles.card, styles.streakCard]}>
             <View style={styles.streakHeader}>
@@ -1402,6 +1435,52 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: SCREEN_HEIGHT * 0.02,
     paddingHorizontal: SCREEN_WIDTH * 0.04,
+  },
+  // Add to your stylesheet
+  goalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingTop: SCREEN_WIDTH * 0.04,
+    paddingRight: SCREEN_WIDTH * 0.04,
+    paddingLeft: SCREEN_WIDTH * 0.04,
+    paddingBottom: SCREEN_WIDTH * 0.03,
+    marginBottom: SCREEN_HEIGHT * 0.005,
+    marginTop: SCREEN_HEIGHT * 0.025,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#e45ea9',
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.01,
+  },
+  goalTitle: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    fontWeight: '700',
+    color: '#333',
+    marginLeft: SCREEN_WIDTH * 0.02,
+  },
+  goalText: {
+    fontSize: SCREEN_WIDTH * 0.045,
+    color: '#666',
+    lineHeight: SCREEN_WIDTH * 0.065,
+  },
+  editGoalButton: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(236, 72, 153, 0.1)',
+    paddingVertical: SCREEN_HEIGHT * 0.008,
+    paddingHorizontal: SCREEN_WIDTH * 0.04,
+    borderRadius: 20,
+  },
+  editGoalButtonText: {
+    fontSize: SCREEN_WIDTH * 0.035,
+    fontWeight: '600',
+    color: '#e45ea9',
   },
   // Cards
   card: {

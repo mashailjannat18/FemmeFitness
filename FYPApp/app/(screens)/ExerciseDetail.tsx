@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Image, View, Text, ScrollView, TouchableOpacity, Pressable, Animated, Easing, Dimensions } from 'react-native';
+import { StyleSheet, Image, View, Text, ScrollView, TouchableOpacity, Pressable, Animated, Easing, Dimensions, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/context/UserAuthContext';
@@ -33,6 +33,8 @@ type ExerciseDetailType = {
   difficulty: string;
   caution: string | null;
   DailyWorkouts: DailyWorkout;
+  YT_links: string | null;
+  time_segments: string | null;
 };
 
 export default function ExerciseDetail() {
@@ -46,9 +48,24 @@ export default function ExerciseDetail() {
   const { user } = useUserAuth();
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    description: true,
+    workoutDetails: true,
+    additionalInfo: true,
+    videoTutorials: true,
+    caution: true
+  });
 
   // Get screen dimensions
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+  const toggleSection = (section: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCollapsedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   useEffect(() => {
     if (!user || !user.id) {
@@ -114,6 +131,8 @@ export default function ExerciseDetail() {
         type,
         difficulty,
         caution,
+        YT_links,
+        time_segments,
         DailyWorkouts (
           id,
           workout_plan_id,
@@ -149,6 +168,8 @@ export default function ExerciseDetail() {
       difficulty: data.difficulty,
       caution: data.caution,
       DailyWorkouts: dailyWorkout,
+      YT_links: data.YT_links,
+      time_segments: data.time_segments,
     });
 
     await fetchImages(data.exercise_name);
@@ -238,6 +259,65 @@ export default function ExerciseDetail() {
       </View>
     </View>
   );
+
+  const parseYouTubeLinks = (links: string | null, segments: string | null) => {
+    if (!links || !segments) return [];
+    
+    try {
+      const linkArray = links.split(',');
+      const segmentArray = segments.split(',');
+      
+      return linkArray.map((link, index) => ({
+        url: link.trim(),
+        time: segmentArray[index]?.trim() || '0:00'
+      }));
+    } catch (error) {
+      console.error('Error parsing YouTube links:', error);
+      return [];
+    }
+  };
+
+  const YouTubeLinksSection = ({ links, segments }: { links: string | null, segments: string | null }) => {
+    const youtubeData = parseYouTubeLinks(links, segments);
+    
+    if (youtubeData.length === 0) return null;
+
+    return (
+      <View style={styles.section}>
+        <TouchableOpacity 
+          onPress={() => toggleSection('videoTutorials')}
+          style={styles.sectionHeader}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.sectionTitle}>Video Tutorials</Text>
+          <MaterialIcons 
+            name={collapsedSections.videoTutorials ? "keyboard-arrow-down" : "keyboard-arrow-up"} 
+            size={24} 
+            color="#666" 
+          />
+        </TouchableOpacity>
+        
+        {!collapsedSections.videoTutorials && (
+          <>
+            {youtubeData.map((item, index) => (
+              <TouchableOpacity 
+                key={index}
+                style={styles.youtubeLink}
+                onPress={() => Linking.openURL(item.url)}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons name="youtube" size={24} color="#FF0000" />
+                <Text style={styles.youtubeLinkText}>
+                  Watch the video for instructions
+                </Text>
+                <MaterialIcons name="open-in-new" size={18} color="#888" />
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+      </View>
+    );
+  };
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty.toLowerCase()) {
@@ -401,73 +481,139 @@ export default function ExerciseDetail() {
             </Text>
           </View>
 
+          {/* Video Tutorials Section */}
+          <YouTubeLinksSection 
+            links={exerciseDetail.YT_links} 
+            segments={exerciseDetail.time_segments} 
+          />
+
           {/* Exercise Description */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.description}>
-              {exerciseDetail.description}
-            </Text>
+            <TouchableOpacity 
+              onPress={() => toggleSection('description')}
+              style={styles.sectionHeader}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.sectionTitle}>Description</Text>
+              <MaterialIcons 
+                name={collapsedSections.description ? "keyboard-arrow-down" : "keyboard-arrow-up"} 
+                size={24} 
+                color="#666" 
+              />
+            </TouchableOpacity>
+            
+            {!collapsedSections.description && (
+              <Text style={styles.description}>
+                {exerciseDetail.description}
+              </Text>
+            )}
           </View>
 
           {/* Exercise Details */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Workout Details</Text>
-            {renderDetailRow(
-              <MaterialCommunityIcons name="repeat" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Reps',
-              exerciseDetail.reps
-            )}
-            {renderDetailRow(
-              <MaterialCommunityIcons name="format-list-numbered" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Sets',
-              exerciseDetail.sets
-            )}
-            {renderDetailRow(
-              <MaterialCommunityIcons name="timer-sand" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Rest Time',
-              `${exerciseDetail.rest_time_sec} sec`
-            )}
-            {renderDetailRow(
-              <MaterialCommunityIcons name="clock-outline" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Duration',
-              `${exerciseDetail.duration_min} min`
-            )}
-            {renderDetailRow(
-              <MaterialCommunityIcons name="fire" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Calories Burned',
-              exerciseDetail.calories_burned
+            <TouchableOpacity 
+              onPress={() => toggleSection('workoutDetails')}
+              style={styles.sectionHeader}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.sectionTitle}>Workout Details</Text>
+              <MaterialIcons 
+                name={collapsedSections.workoutDetails ? "keyboard-arrow-down" : "keyboard-arrow-up"} 
+                size={24} 
+                color="#666" 
+              />
+            </TouchableOpacity>
+            
+            {!collapsedSections.workoutDetails && (
+              <>
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="repeat" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Reps',
+                  exerciseDetail.reps
+                )}
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="format-list-numbered" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Sets',
+                  exerciseDetail.sets
+                )}
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="timer-sand" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Rest Time',
+                  `${exerciseDetail.rest_time_sec} sec`
+                )}
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="clock-outline" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Duration',
+                  `${exerciseDetail.duration_min} min`
+                )}
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="fire" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Calories Burned',
+                  exerciseDetail.calories_burned
+                )}
+              </>
             )}
           </View>
 
           {/* Additional Info */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Additional Info</Text>
-            {renderDetailRow(
-              <MaterialCommunityIcons name="weight-lifter" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Type',
-              exerciseDetail.type
-            )}
-            {renderDetailRow(
-              <MaterialCommunityIcons name="target" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
-              'Primary Muscle',
-              exerciseDetail.target_muscle ?? 'No muscle group'
+            <TouchableOpacity 
+              onPress={() => toggleSection('additionalInfo')}
+              style={styles.sectionHeader}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.sectionTitle}>Additional Info</Text>
+              <MaterialIcons 
+                name={collapsedSections.additionalInfo ? "keyboard-arrow-down" : "keyboard-arrow-up"} 
+                size={24} 
+                color="#666" 
+              />
+            </TouchableOpacity>
+            
+            {!collapsedSections.additionalInfo && (
+              <>
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="weight-lifter" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Type',
+                  exerciseDetail.type
+                )}
+                {renderDetailRow(
+                  <MaterialCommunityIcons name="target" size={SCREEN_WIDTH * 0.05} color="#e45ea9" />,
+                  'Primary Muscle',
+                  exerciseDetail.target_muscle ?? 'No muscle group'
+                )}
+              </>
             )}
           </View>
 
           {/* Caution Section */}
           {exerciseDetail.caution && (
             <View style={styles.cautionContainer}>
-              <View style={styles.cautionHeader}>
-                <MaterialCommunityIcons 
-                  name="alert-circle" 
-                  size={SCREEN_WIDTH * 0.06} 
+              <TouchableOpacity 
+                onPress={() => toggleSection('caution')}
+                style={styles.cautionHeader}
+                activeOpacity={0.8}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <MaterialCommunityIcons 
+                    name="alert-circle" 
+                    size={SCREEN_WIDTH * 0.06} 
+                    color="#D32F2F" 
+                  />
+                  <Text style={styles.cautionTitle}>Important Caution</Text>
+                </View>
+                <MaterialIcons 
+                  name={collapsedSections.caution ? "keyboard-arrow-down" : "keyboard-arrow-up"} 
+                  size={24} 
                   color="#D32F2F" 
                 />
-                <Text style={styles.cautionTitle}>Important Caution</Text>
-              </View>
-              <Text style={styles.cautionText}>
-                {exerciseDetail.caution}
-              </Text>
+              </TouchableOpacity>
+              
+              {!collapsedSections.caution && (
+                <Text style={styles.cautionText}>
+                  {exerciseDetail.caution}
+                </Text>
+              )}
             </View>
           )}
         </Animated.View>
@@ -655,11 +801,15 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   sectionTitle: {
     fontSize: Dimensions.get('window').width * 0.05,
     fontWeight: '700',
     color: '#333',
-    marginBottom: Dimensions.get('window').height * 0.02,
     borderLeftWidth: 4,
     borderLeftColor: '#e45ea9',
     paddingLeft: Dimensions.get('window').width * 0.03,
@@ -668,12 +818,32 @@ const styles = StyleSheet.create({
     fontSize: Dimensions.get('window').width * 0.04,
     lineHeight: Dimensions.get('window').width * 0.06,
     color: '#555',
+    marginTop: Dimensions.get('window').height * 0.02,
+  },
+  youtubeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEE',
+    marginTop: Dimensions.get('window').height * 0.015,
+  },
+  youtubeLinkText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: Dimensions.get('window').width * 0.035,
+    color: '#333',
   },
   // Detail Rows
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Dimensions.get('window').height * 0.0175,
+    marginTop: Dimensions.get('window').height * 0.03,
   },
   detailIcon: {
     width: Dimensions.get('window').width * 0.09,
@@ -715,6 +885,7 @@ const styles = StyleSheet.create({
   cautionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Dimensions.get('window').height * 0.01,
   },
   cautionTitle: {
@@ -727,5 +898,6 @@ const styles = StyleSheet.create({
     fontSize: Dimensions.get('window').width * 0.0375,
     lineHeight: Dimensions.get('window').width * 0.055,
     color: '#666',
+    marginTop: Dimensions.get('window').height * 0.015,
   },
 });

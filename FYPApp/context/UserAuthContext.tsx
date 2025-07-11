@@ -16,6 +16,7 @@ type User = {
 type UserAuthContextType = {
   user: User | null;
   isLoggedIn: boolean;
+  loading: boolean;
   userData: UserData;
   setUserData: (key: keyof UserData, value: number | string | string[] | any[] | Date | null) => void;
   signUp: (email: string, password: string, username: string, challengeDays: number) => Promise<void>;
@@ -38,6 +39,7 @@ const UserAuthContext = createContext<UserAuthContextType | undefined>(undefined
 export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [contextUserData, setContextUserData] = useState<UserData>(getUserData());
 
   useEffect(() => {
@@ -54,6 +56,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       } catch (error) {
         console.error('Error checking session:', error);
+      } finally {
+        setLoading(false);
       }
     };
     checkSession();
@@ -63,10 +67,12 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const { error } = await supabase.rpc('cleanup_expired_codes');
       if (error) {
-        // Silently ignore errors, as cleanup is non-critical for user flow
+        console.warn('Cleanup expired codes failed:', error.message);
+      } else {
+        console.log('Expired codes cleaned up successfully');
       }
     } catch (error: any) {
-      // Silently ignore errors
+      console.warn('Error during cleanupExpiredCodes:', error.message);
     }
   };
 
@@ -85,8 +91,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const userData = JSON.parse(session);
         const { data, error } = await supabase
           .from('User')
-          .select('"id", "username", "email", "last_period_date", "cycle_length", "bleeding_days"')
-          .eq('"id"', userData.id)
+          .select('id, username, email, last_period_date, cycle_length, bleeding_days')
+          .eq('id', userData.id)
           .single();
 
         if (error || !data) {
@@ -120,8 +126,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: existingEmail, error: emailCheckError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedEmail)
+        .select('id')
+        .eq('email', trimmedEmail)
         .single();
 
       if (emailCheckError && emailCheckError.code !== 'PGRST116') {
@@ -135,8 +141,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: existingUser, error: usernameCheckError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"username"', trimmedUsername)
+        .select('id')
+        .eq('username', trimmedUsername)
         .single();
 
       if (usernameCheckError && usernameCheckError.code !== 'PGRST116') {
@@ -154,7 +160,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.log(`Signup confirmation code for ${trimmedEmail}: ${code}`);
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
 
       setUserData('email', trimmedEmail);
       setUserData('password', password);
@@ -199,7 +205,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { data, error } = await supabase
         .from('ConfirmationCodes')
         .select('resend_count, user_data, last_resend_at')
-        .eq('"email"', trimmedEmail)
+        .eq('email', trimmedEmail)
         .single();
 
       if (error || !data) {
@@ -208,7 +214,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const resendCount = data.resend_count || 0;
       if (resendCount >= 3) {
-        await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+        await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
         if (data.user_data.type !== 'password_reset' && data.user_data.type !== 'email_verification' && data.user_data.type !== 'new_email_verification') {
           initializeSignup();
         }
@@ -236,7 +242,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           resend_count: resendCount + 1,
           last_resend_at: new Date().toISOString(),
         })
-        .eq('"email"', trimmedEmail);
+        .eq('email', trimmedEmail);
 
       if (updateError) {
         console.error('Error updating confirmation code:', updateError.message);
@@ -259,7 +265,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { data, error } = await supabase
         .from('ConfirmationCodes')
         .select('code, expires_at, user_data')
-        .eq('"email"', trimmedEmail)
+        .eq('email', trimmedEmail)
         .eq('code', code)
         .single();
 
@@ -270,7 +276,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const now = new Date();
       const expiresAt = new Date(data.expires_at);
       if (now > expiresAt) {
-        await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+        await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
         throw new Error('Confirmation code has expired.');
       }
 
@@ -281,7 +287,6 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error('Failed to complete signup.');
       }
 
-      // Ensure userId is a number
       const numericUserId = Number(userId);
       if (isNaN(numericUserId)) {
         throw new Error('Invalid user ID format');
@@ -303,7 +308,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         lastPeriodDate: userDataToStore.lastPeriodDate?.toISOString().split('T')[0] || null,
       }));
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
     } catch (error: any) {
       console.error('Code verification error:', error.message);
       throw error;
@@ -316,8 +321,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: user, error: userError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedEmail)
+        .select('id')
+        .eq('email', trimmedEmail)
         .single();
 
       if (userError || !user) {
@@ -331,7 +336,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
 
       const { error: insertError } = await supabase
         .from('ConfirmationCodes')
@@ -365,7 +370,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { data, error } = await supabase
         .from('ConfirmationCodes')
         .select('code, expires_at, user_data')
-        .eq('"email"', trimmedEmail)
+        .eq('email', trimmedEmail)
         .eq('code', code)
         .single();
 
@@ -376,7 +381,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const now = new Date();
       const expiresAt = new Date(data.expires_at);
       if (now > expiresAt) {
-        await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+        await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
         throw new Error('Confirmation code has expired.');
       }
 
@@ -395,8 +400,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: user, error: userError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedEmail)
+        .select('id')
+        .eq('email', trimmedEmail)
         .single();
 
       if (userError || !user) {
@@ -406,13 +411,13 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { error: updateError } = await supabase
         .from('User')
         .update({ password: newPassword })
-        .eq('"id"', user.id);
+        .eq('id', user.id);
 
       if (updateError) {
         throw new Error('Failed to update password: ' + updateError.message);
       }
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
     } catch (error: any) {
       console.error('Password reset error:', error.message);
       throw error;
@@ -425,8 +430,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: user, error: userError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedEmail)
+        .select('id')
+        .eq('email', trimmedEmail)
         .single();
 
       if (userError || !user) {
@@ -440,7 +445,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
 
       const { error: insertError } = await supabase
         .from('ConfirmationCodes')
@@ -474,7 +479,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { data, error } = await supabase
         .from('ConfirmationCodes')
         .select('code, expires_at, user_data')
-        .eq('"email"', trimmedEmail)
+        .eq('email', trimmedEmail)
         .eq('code', code)
         .single();
 
@@ -485,7 +490,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const now = new Date();
       const expiresAt = new Date(data.expires_at);
       if (now > expiresAt) {
-        await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+        await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
         throw new Error('Confirmation code has expired.');
       }
 
@@ -505,8 +510,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: existingEmail, error: emailCheckError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedNewEmail)
+        .select('id')
+        .eq('email', trimmedNewEmail)
         .single();
 
       if (emailCheckError && emailCheckError.code !== 'PGRST116') {
@@ -529,7 +534,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedNewEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedNewEmail);
 
       const { error: insertError } = await supabase
         .from('ConfirmationCodes')
@@ -564,7 +569,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { data, error } = await supabase
         .from('ConfirmationCodes')
         .select('code, expires_at, user_data')
-        .eq('"email"', trimmedEmail)
+        .eq('email', trimmedEmail)
         .eq('code', code)
         .single();
 
@@ -575,7 +580,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const now = new Date();
       const expiresAt = new Date(data.expires_at);
       if (now > expiresAt) {
-        await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+        await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
         throw new Error('Confirmation code has expired.');
       }
 
@@ -590,8 +595,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const { data: user, error: userError } = await supabase
         .from('User')
-        .select('"id"')
-        .eq('"email"', trimmedCurrentEmail)
+        .select('id')
+        .eq('email', trimmedCurrentEmail)
         .single();
 
       if (userError || !user) {
@@ -602,13 +607,13 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { error: updateError } = await supabase
         .from('User')
         .update({ email: newEmail })
-        .eq('"id"', user.id);
+        .eq('id', user.id);
 
       if (updateError) {
         throw new Error('Failed to update email: ' + updateError.message);
       }
 
-      await supabase.from('ConfirmationCodes').delete().eq('"email"', trimmedEmail);
+      await supabase.from('ConfirmationCodes').delete().eq('email', trimmedEmail);
       await refreshUser();
     } catch (error: any) {
       console.error('New email code verification error:', error.message);
@@ -618,33 +623,60 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const login = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase
-        .from('User')
-        .select('"id", "username", "email", "last_period_date", "cycle_length", "bleeding_days"')
-        .eq('"email"', email.trim().toLowerCase())
-        .eq('"password"', password)
-        .single();
+      const trimmedEmail = email.trim().toLowerCase();
+      
+      console.log('Login function called with email:', trimmedEmail);
 
-      if (error || !data) {
-        return { success: false, error: 'Invalid email or password.' };
+      const { data: allUsers, error: allUsersError } = await supabase
+        .from('User')
+        .select('email');
+      
+      if (allUsersError) {
+        console.error('Error fetching all users for debugging:', allUsersError);
+      } else {
+        console.log('Emails in User table:', allUsers.map(user => user.email));
       }
 
-      const userData = { 
-        id: data.id.toString(), 
-        username: data.username, 
-        email: data.email,
-        lastPeriodDate: data.last_period_date ? new Date(data.last_period_date) : null,
-        cycleLength: data.cycle_length,
-        bleedingDays: data.bleeding_days,
+      console.log('Executing query: SELECT id, username, email, last_period_date, cycle_length, bleeding_days, password FROM User WHERE email =', trimmedEmail);
+      const { data: userData, error: userError } = await supabase
+        .from('User')
+        .select('id, username, email, last_period_date, cycle_length, bleeding_days, password')
+        .eq('email', trimmedEmail)
+        .single();
+
+      console.log('Query result:', { userData, userError });
+
+      if (userError || !userData) {
+        console.log('No user found with email:', trimmedEmail);
+        return { success: false, error: 'No account found with this email.' };
+      }
+
+      console.log('Comparing passwords:', { stored: userData.password, provided: password });
+      if (userData.password !== password) {
+        console.log('Password mismatch for email:', trimmedEmail);
+        return { success: false, error: 'Incorrect password.' };
+      }
+
+      const user = { 
+        id: userData.id.toString(), 
+        username: userData.username, 
+        email: userData.email,
+        lastPeriodDate: userData.last_period_date ? new Date(userData.last_period_date) : null,
+        cycleLength: userData.cycle_length,
+        bleedingDays: userData.bleeding_days,
       };
-      setUser(userData);
+      
+      console.log('User authenticated successfully:', user);
+      setUser(user);
       setIsLoggedIn(true);
       await AsyncStorage.setItem('userSession', JSON.stringify({
-        ...userData,
-        lastPeriodDate: userData.lastPeriodDate?.toISOString().split('T')[0] || null,
+        ...user,
+        lastPeriodDate: user.lastPeriodDate?.toISOString().split('T')[0] || null,
       }));
+      
       return { success: true };
     } catch (error: any) {
+      console.error('Login error:', error);
       return { success: false, error: error.message || 'An error occurred during login.' };
     }
   };
@@ -659,7 +691,8 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setUserData('bleedingDays', 0);
       await AsyncStorage.removeItem('userSession');
     } catch (error) {
-      // Silently handle error
+      console.error('Error during logout:', error);
+      throw error;
     }
   };
 
@@ -668,6 +701,7 @@ export const UserAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       value={{
         user,
         isLoggedIn,
+        loading,
         userData: contextUserData,
         setUserData,
         signUp,

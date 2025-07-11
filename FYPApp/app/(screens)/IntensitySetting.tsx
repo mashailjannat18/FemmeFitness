@@ -8,13 +8,11 @@ import {
   ScrollView,
   Dimensions,
   Alert,
-  Image,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useUserAuth } from '@/context/UserAuthContext';
 import { supabase } from '@/lib/supabase';
-import Logo from '@/assets/images/Logo.png';
 import * as Haptics from 'expo-haptics';
 import { Easing } from 'react-native';
 
@@ -24,7 +22,7 @@ const IntensitySetting = () => {
   const intensities = [
     { level: 'Beginner', emoji: '🌸', color: '#F8BBD0' },
     { level: 'Mediocre', emoji: '🌷', color: '#F48FB1' },
-    { level: 'Intense', emoji: '🌺', color: '#EC407A' },
+    // { level: 'Intense', emoji: '🌺', color: '#EC407A' },
   ];
 
   const [intensity, setIntensity] = useState<string | null>(null);
@@ -42,6 +40,7 @@ const IntensitySetting = () => {
   };
 
   useEffect(() => {
+    console.log('DEBUG: Initializing animations at', new Date().toISOString());
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -60,11 +59,12 @@ const IntensitySetting = () => {
   useEffect(() => {
     const fetchIntensity = async () => {
       if (!user?.id) {
-        console.error('No user ID available to fetch intensity');
+        console.error('DEBUG: No user ID available to fetch intensity');
         setIntensity(null);
         return;
       }
 
+      console.log('DEBUG: Fetching intensity for user_id:', user.id);
       try {
         const { data, error } = await supabase
           .from('User')
@@ -73,21 +73,23 @@ const IntensitySetting = () => {
           .single();
 
         if (error) {
-          console.error('Error fetching intensity:', error.message);
+          console.error('DEBUG: Error fetching intensity:', error.message);
           Alert.alert('Error', 'Failed to load your workout intensity.');
           return;
         }
 
         if (data && data.intensity) {
           const mappedIntensity = intensityMap[data.intensity.toLowerCase()] || 'Not selected';
+          console.log('DEBUG: Fetched intensity:', data.intensity, 'Mapped to:', mappedIntensity);
           setIntensity(mappedIntensity);
           setInitialIntensity(mappedIntensity);
         } else {
+          console.log('DEBUG: No intensity found, setting to Not selected');
           setIntensity('Not selected');
           setInitialIntensity('Not selected');
         }
       } catch (err: any) {
-        console.error('Unexpected error fetching intensity:', err.message);
+        console.error('DEBUG: Unexpected error fetching intensity:', err.message);
         Alert.alert('Error', 'Failed to load your workout intensity.');
       }
     };
@@ -96,6 +98,7 @@ const IntensitySetting = () => {
   }, [user?.id]);
 
   const handlePress = (index: number, level: string) => {
+    console.log('DEBUG: Selected intensity:', level, 'at index:', index);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIntensity(level);
 
@@ -116,18 +119,22 @@ const IntensitySetting = () => {
   };
 
   const handleSave = async () => {
+    console.log('DEBUG: handleSave triggered at', new Date().toISOString());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (!user) {
+      console.error('DEBUG: User not logged in');
       Alert.alert('Error', 'User not logged in.');
       return;
     }
 
     if (!intensity || intensity === 'Not selected') {
+      console.error('DEBUG: No intensity selected');
       Alert.alert('Error', 'Please select an intensity before saving.');
       return;
     }
 
     if (intensity === initialIntensity) {
+      console.log('DEBUG: No changes to intensity, current:', intensity);
       Alert.alert('Info', 'No changes made to your intensity.');
       return;
     }
@@ -135,12 +142,14 @@ const IntensitySetting = () => {
     const reverseIntensityMap: { [key: string]: string } = {
       Beginner: 'low',
       Mediocre: 'moderate',
-      Intense: 'high',
+      // Intense: 'high',
     };
 
     const dbIntensity = reverseIntensityMap[intensity];
+    console.log('DEBUG: Mapped intensity to database value:', dbIntensity);
 
     try {
+      console.log('DEBUG: Fetching user data for user_id:', user.id);
       const { data: userData, error: userError } = await supabase
         .from('User')
         .select('id, age, weight, height, goal, activity_level, preferred_rest_days, challenge_days, last_period_date, cycle_length, bleeding_days')
@@ -148,9 +157,25 @@ const IntensitySetting = () => {
         .single();
 
       if (userError || !userData) {
+        console.error('DEBUG: Error fetching user data:', userError?.message || 'No user data');
         throw new Error('Failed to fetch user data.');
       }
 
+      console.log('DEBUG: Fetched user data:', {
+        id: userData.id,
+        age: userData.age,
+        weight: userData.weight,
+        height: userData.height,
+        goal: userData.goal,
+        activity_level: userData.activity_level,
+        preferred_rest_days: userData.preferred_rest_days,
+        challenge_days: userData.challenge_days,
+        last_period_date: userData.last_period_date,
+        cycle_length: userData.cycle_length,
+        bleeding_days: userData.bleeding_days
+      });
+
+      console.log('DEBUG: Fetching active workout plan for user_id:', user.id);
       const { data: workoutPlanData, error: workoutError } = await supabase
         .from('WorkoutPlans')
         .select('id, start_date')
@@ -159,14 +184,27 @@ const IntensitySetting = () => {
         .single();
 
       if (workoutError || !workoutPlanData) {
+        console.error('DEBUG: Error fetching workout plan:', workoutError?.message || 'No workout plan');
         throw new Error('No active workout plan found.');
       }
 
+      console.log('DEBUG: Fetched workout plan:', {
+        id: workoutPlanData.id,
+        start_date: workoutPlanData.start_date
+      });
+
       const startDate = new Date(workoutPlanData.start_date);
       const currentDate = new Date();
-      const daysElapsed = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const daysElapsed = Math.max(1, Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      const remainingDays = Math.max(1, userData.challenge_days - (daysElapsed - 1));
 
-      if (daysElapsed >= userData.challenge_days) {
+      console.log('DEBUG: Calculated values:', {
+        daysElapsed,
+        remainingDays
+      });
+
+      if (remainingDays <= 0) {
+        console.error('DEBUG: Challenge has ended, remainingDays:', remainingDays);
         Alert.alert('Info', 'Your current challenge has ended. Please start a new challenge.');
         return;
       }
@@ -177,15 +215,22 @@ const IntensitySetting = () => {
         goal: userData.goal,
         weight: userData.weight,
         challengeDays: userData.challenge_days,
+        remainingDays: remainingDays,
+        startDate: workoutPlanData.start_date,
         preferredRestDay: userData.preferred_rest_days,
         height: userData.height,
         currentDay: daysElapsed,
         userId: userData.id,
         workoutPlanId: workoutPlanData.id,
         intensity: dbIntensity,
+        lastPeriodDate: userData.last_period_date,
+        cycleLength: userData.cycle_length,
+        bleedingDays: userData.bleeding_days,
       };
 
-      const response = await fetch('http://10.135.48.158:5000/api/update-plan', {
+      console.log('DEBUG: Payload being sent to /update-plan:', payload);
+
+      const response = await fetch('http://10.135.64.168:5000/api/update-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -193,41 +238,26 @@ const IntensitySetting = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('DEBUG: /update-plan request failed:', errorText);
         throw new Error(`Failed to update plans: ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('DEBUG: Received success response from /update-plan');
 
-      const { data, error: rpcError } = await supabase.rpc('update_user_and_workout_plan', {
-        p_user_id: userData.id,
-        p_weight: userData.weight,
-        p_activity_level: userData.activity_level,
-        p_challenge_days: userData.challenge_days,
-        p_workout_plan: result.workout_plan,
-        p_meal_plan: result.meal_plan,
-        p_start_date: currentDate.toLocaleDateString().split('T')[0],
-        p_intensity: dbIntensity,
-        p_goal: userData.goal,
-        p_last_period_date: userData.last_period_date,
-        p_cycle_length: userData.cycle_length,
-        p_bleeding_days: userData.bleeding_days,
-      });
-
-      if (rpcError) {
-        throw new Error(`Failed to update user and workout plan: ${rpcError.message}`);
-      }
-
+      console.log('DEBUG: Updating User table with intensity:', dbIntensity);
       await supabase
         .from('User')
         .update({ intensity: dbIntensity })
         .eq('id', user.id);
 
+      console.log('DEBUG: Intensity updated, refreshing user data');
       setInitialIntensity(intensity);
       await refreshUser();
       Alert.alert('Success', 'Your workout intensity has been updated, and your plans have been regenerated.');
     } catch (err: any) {
-      console.error('Error updating intensity:', err.message);
-      Alert.alert('Error', 'Failed to update your workout intensity.');
+      console.error('DEBUG: Error updating intensity:', err.message);
+      Alert.alert('Error', `Failed to update your workout intensity: ${err.message}`);
     }
   };
 
@@ -353,12 +383,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
     flex: 1,
   },
-  logo: {
-    width: SCREEN_WIDTH * 0.1,
-    height: SCREEN_WIDTH * 0.1,
-    borderRadius: SCREEN_WIDTH * 0.05,
-    marginRight: SCREEN_WIDTH * 0.02,
-  },
   backButton: {
     padding: SCREEN_WIDTH * 0.02,
     borderRadius: 20,
@@ -398,10 +422,17 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: SCREEN_WIDTH * 0.04,
   },
+  // cardsContainer: {
+  //   flexDirection: 'row',
+  //   flexWrap: 'wrap',
+  //   justifyContent: 'space-between',
+  // },
   cardsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
   },
   intensityCard: {
     width: '30%',

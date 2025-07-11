@@ -59,7 +59,7 @@ const Question5: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.headerContainer}>
         <Pressable 
-          onPress={() => router.push("/(screens)/Question4")} 
+          onPress={() => router.push("/(screens)/Question3")} 
           style={({ pressed }: PressableStateCallbackType) => [
             styles.backButton,
             { opacity: pressed ? 0.6 : 1 }

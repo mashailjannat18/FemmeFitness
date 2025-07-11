@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,9 @@ import {
   Easing,
   Dimensions,
   Pressable,
+  RefreshControl
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useUserAuth } from '@/context/UserAuthContext';
 import { 
   MaterialIcons, 
@@ -21,42 +22,158 @@ import {
 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Logo from '@/assets/images/Logo.png';
+import { supabase } from '@/lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// [UserData type and related exports remain unchanged]
-
 const Profile = () => {
   const router = useRouter();
-  const { user, logout } = useUserAuth();
+  const { user, logout, loading: authLoading, isLoggedIn } = useUserAuth();
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
   const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<any>(null);
+  const [bmi, setBmi] = useState<number | null>(null);
+  const [bmiCategory, setBmiCategory] = useState<string>('');
+  const [displayHeight, setDisplayHeight] = useState<any>();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchUserData = useCallback(async () => {
+    if (user?.id) {
+      setRefreshing(true);
+      try {
+        const { data, error } = await supabase
+          .from('User')
+          .select('height, weight')
+          .eq('id', user.id)
+          .single();
+
+        if (data && !error) {
+          setUserData(data);
+          const heightInInches = parseHeightInput(data.height);
+          const calculatedBmi = calculateBMI(heightInInches, data.weight);
+          setBmi(calculatedBmi);
+          setBmiCategory(getBmiCategory(calculatedBmi));
+          
+          // Store the parsed height for display
+          setDisplayHeight({
+            feet: Math.floor(heightInInches / 12),
+            inches: heightInInches % 12
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  }, [user]);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start(() => setLoading(false));
-  }, []);
+    if (!authLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => setLoading(false));
+    }
+  }, [authLoading]);
+
+  useEffect(() => {
+    if (!authLoading && !isLoggedIn) {
+      router.replace('/Login');
+    }
+  }, [authLoading, isLoggedIn, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserData();
+    }, [fetchUserData])
+  );
+
+  const onRefresh = useCallback(async () => {
+    await fetchUserData();
+  }, [fetchUserData]);
 
   const handleLogout = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await logout();
-      router.push('/Login');
+      await new Promise(resolve => setTimeout(resolve, 100)); // Slight delay
+      router.replace('/Login');
     } catch (error) {
       console.error('Logout error:', error);
     }
+  };
+
+  // Function to calculate BMI
+  const calculateBMI = (heightInInches: number, weightInKg: number): number => {
+    if (!heightInInches || !weightInKg) return 0;
+    // Convert inches to meters (1 inch = 0.0254 meters)
+    const heightInMeters = heightInInches * 0.0254;
+    // Calculate BMI (weight in kg / (height in m)^2)
+    return parseFloat((weightInKg / (heightInMeters * heightInMeters)).toFixed(1));
+  };
+
+  // Parse height input in feet (e.g., 5.1 for 5 feet 1 inch) to total inches
+  const parseHeightInput = (heightInput: string | number): number => {
+    const heightNum = parseFloat(String(heightInput));
+    if (isNaN(heightNum)) return 0;
+
+    // Split into whole feet and decimal (representing inches)
+    const feet = Math.floor(heightNum); // Whole feet
+    const decimalInches = (heightNum - feet) * 10; // Convert decimal to inches (e.g., 0.1 feet = 1 inch)
+    return (feet * 12) + decimalInches; // Total inches
+  };
+
+  // Helper function to format height for display
+  const formatHeightDisplay = (totalInches: number): string => {
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    return `${feet}ft ${inches}in`;
+  };
+
+  // Function to get BMI category
+  const getBmiCategory = (bmiValue: number): string => {
+    if (bmiValue < 16.0) return "Severely Underweight";
+    else if (bmiValue < 17.0) return "Moderately Underweight";
+    else if (bmiValue < 18.5) return "Mildly Underweight";
+    else if (bmiValue < 25.0) return "Normal";
+    else if (bmiValue < 30.0) return "Overweight";
+    else if (bmiValue < 35.0) return "Obese (Class I)";
+    else if (bmiValue < 40.0) return "Obese (Class II)";
+    else return "Obese (Class III)";
+  };
+
+  // Function to get gradient colors based on BMI
+  const getBmiGradient = (bmiValue: number): string[] => {
+    if (bmiValue < 18.5) return ['#4FC3F7', '#23566d'];
+    else if (bmiValue < 25.0) return ['#66BB6A', '#235c26'];
+    else if (bmiValue < 30.0) return ['#FFA726', '#714a12'];
+    else return ['#EF5350', '#782726'];
+  };
+
+  // Add these helper functions
+  const getBmiColor = (bmiValue: number): string => {
+    if (bmiValue < 18.5) return '#4FC3F7';
+    else if (bmiValue < 25.0) return '#66BB6A';
+    else if (bmiValue < 30.0) return '#FFA726';
+    else return '#EF5350';
+  };
+
+  const bmiProgressRotation = (bmi: number): string => {
+    const clampedBmi = Math.min(Math.max(bmi, 16), 40);
+    const rotation = ((clampedBmi - 16) / (40 - 16)) * 360;
+    return `${rotation}deg`;
   };
 
   const handleBackPress = () => {
@@ -87,13 +204,6 @@ const Profile = () => {
       description: 'Manage your health conditions'
     },
     { 
-      label: 'Goal Setting', 
-      route: '/(screens)/GoalSetting', 
-      icon: 'flag-checkered',
-      color: '#2196F3',
-      description: 'Set your fitness goals'
-    },
-    { 
       label: 'Workout Preferences', 
       route: '/(screens)/IntensitySetting', 
       icon: 'dumbbell',
@@ -109,7 +219,7 @@ const Profile = () => {
     },
   ] as const;
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.loadingContainer}>
         <Animated.View style={[styles.loadingAnimation, { transform: [{ rotate: fadeAnim.interpolate({
@@ -152,7 +262,7 @@ const Profile = () => {
           <Text style={styles.errorText}>Please log in to view your profile</Text>
           <TouchableOpacity
             style={styles.backButton1}
-            onPress={() => router.push('/Login')}
+            onPress={() => router.replace('/Login')}
           >
             <Text style={styles.backButtonText}>Go to Login</Text>
           </TouchableOpacity>
@@ -163,46 +273,97 @@ const Profile = () => {
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.headerContainer, {
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }]
-      }]}>
-        <Image
-          source={Logo}
-          style={styles.logo}
-        />
+      <Animated.View
+        style={[
+          styles.headerContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <Image source={Logo} style={styles.logo} />
         <Text style={styles.headerText}>Profile</Text>
-        <Text style={styles.usernameText}>{user.username || 'User'}</Text>
+        <Text style={styles.usernameText}>{user?.username || "User"}</Text>
       </Animated.View>
 
       <ScrollView 
         contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#e45ea9"
+            colors={['#e45ea9']}
+          />
+        }
       >
-        <Animated.View style={{
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }}>
-          <View style={styles.profileCard}>
-            <View style={styles.profileHeader}>
-              <View style={styles.avatarContainer}>
-                <FontAwesome5 
-                  name="user-alt" 
-                  size={SCREEN_WIDTH * 0.14} 
-                  color="#e45ea9" 
-                  style={styles.avatar}
-                />
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <View style={styles.inlineCardsContainer}>
+            <View style={styles.userInfoCard}>
+              <FontAwesome5
+                name="user-alt"
+                size={SCREEN_WIDTH * 0.12}
+                color="#e45ea9"
+                style={styles.userIcon}
+              />
+              <View style={styles.userTextContainer}>
+                <Text style={styles.userName}>{user?.username || "User"}</Text>
+                <Text style={styles.userEmail} numberOfLines={1} ellipsizeMode="tail">
+                  {user?.email || "No email"}
+                </Text>
               </View>
-              <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>{user.username || 'User'}</Text>
-                <Text style={styles.profileEmail}>{user.email}</Text>
+            </View>
+
+            <View style={styles.bmiCard}>
+              <View style={styles.bmiContainer}>
+                {/* Background track (full circle) */}
+                <View style={[
+                  styles.bmiProgressTrack,
+                  { borderColor: bmi ? `${getBmiColor(bmi)}20` : '#f0f0f0' } // 20 = 12.5% opacity
+                ]} />
+                
+                {/* Colored progress ring */}
+                {bmi && (
+                  <Animated.View style={[
+                    styles.bmiProgressFill,
+                    {
+                      borderTopColor: getBmiColor(bmi),
+                      borderRightColor: bmi > 25 ? getBmiColor(bmi) : 'transparent',
+                      borderBottomColor: bmi > 30 ? getBmiColor(bmi) : 'transparent',
+                      borderLeftColor: bmi > 35 ? getBmiColor(bmi) : 'transparent',
+                      transform: [
+                        { rotate: bmiProgressRotation(bmi) }
+                      ]
+                    }
+                  ]} />
+                )}
+                
+                {/* Inner circle with gradient */}
+                <LinearGradient
+                  colors={bmi ? getBmiGradient(bmi) : ['#9E9E9E', '#757575']}
+                  style={styles.bmiInnerCircle}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Text style={styles.bmiValue}>{bmi || '--'}</Text>
+                  <Text style={styles.bmiLabel}>BMI</Text>
+                </LinearGradient>
               </View>
+
+              {/* BMI category and details */}
+              <Text style={styles.bmiCategory}>{bmiCategory || 'Unknown'}</Text>
+              {userData && (
+                <Text style={styles.bmiDetails}>
+                  {userData?.height ? formatHeightDisplay(parseHeightInput(userData.height)) : '--'} •{' '}
+                  {userData?.weight ? `${userData.weight} kg` : '--'}
+                </Text>
+              )}
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Profile Settings</Text>
-            
             {profileOptions.map((item, index) => (
               <TouchableOpacity
                 key={index}
@@ -214,34 +375,34 @@ const Profile = () => {
                 activeOpacity={0.8}
               >
                 <View style={[styles.optionIcon, { backgroundColor: item.color }]}>
-                  <MaterialCommunityIcons 
-                    name={item.icon} 
-                    size={SCREEN_WIDTH * 0.06} 
-                    color="#fff" 
+                  <MaterialCommunityIcons
+                    name={item.icon}
+                    size={SCREEN_WIDTH * 0.06}
+                    color="#fff"
                   />
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={styles.optionTitle}>{item.label}</Text>
                   <Text style={styles.optionDescription}>{item.description}</Text>
                 </View>
-                <MaterialIcons 
-                  name="chevron-right" 
-                  size={SCREEN_WIDTH * 0.06} 
-                  color="#9E9E9E" 
+                <MaterialIcons
+                  name="chevron-right"
+                  size={SCREEN_WIDTH * 0.06}
+                  color="#9E9E9E"
                 />
               </TouchableOpacity>
             ))}
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleLogout}
             activeOpacity={0.8}
           >
-            <MaterialIcons 
-              name="logout" 
-              size={SCREEN_WIDTH * 0.05} 
-              color="#fff" 
+            <MaterialIcons
+              name="logout"
+              size={SCREEN_WIDTH * 0.05}
+              color="#fff"
               style={styles.logoutIcon}
             />
             <Text style={styles.logoutButtonText}>Log Out</Text>
@@ -260,7 +421,6 @@ const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: SCREEN_WIDTH * 0.043,
     paddingVertical: SCREEN_HEIGHT * 0.015,
     backgroundColor: '#e45ea9',
@@ -386,6 +546,188 @@ const styles = StyleSheet.create({
   profileEmail: {
     fontSize: SCREEN_WIDTH * 0.035,
     color: '#666',
+  },
+  inlineCardsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: SCREEN_HEIGHT * 0.02,
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  userInfoCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: SCREEN_WIDTH * 0.04,
+    marginRight: SCREEN_WIDTH * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bmiCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginLeft: SCREEN_WIDTH * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bmiContainer: {
+    width: SCREEN_WIDTH * 0.32,  // Slightly larger to accommodate ring
+    height: SCREEN_WIDTH * 0.32,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  bmiProgressTrack: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: SCREEN_WIDTH * 0.16,
+    borderWidth: 10,  // Thicker border
+    borderColor: '#f0f0f0',
+  },
+  bmiProgressFill: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: SCREEN_WIDTH * 0.16,
+    borderWidth: 10,
+    borderTopColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: 'transparent',
+    transformOrigin: 'center center',
+  },
+  bmiInnerCircle: {
+    width: SCREEN_WIDTH * 0.22,  // Adjusted to fit new ring size
+    height: SCREEN_WIDTH * 0.22,
+    borderRadius: SCREEN_WIDTH * 0.11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bmiVisualization: {
+    position: 'relative',
+    width: SCREEN_WIDTH * 0.3,
+    height: SCREEN_WIDTH * 0.3,
+    marginBottom: 12,
+  },
+  bmiOuterCircle: {
+    width: '100%',
+    height: '100%',
+    borderRadius: SCREEN_WIDTH * 0.15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  bmiValue: {
+    fontSize: SCREEN_WIDTH * 0.06,
+    fontWeight: 'bold',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  bmiLabel: {
+    fontSize: SCREEN_WIDTH * 0.035,
+    color: '#fff',
+    marginTop: -4,
+    textShadowColor: 'rgba(0,0,0,0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  bmiCategory: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  bmiDetails: {
+    fontSize: SCREEN_WIDTH * 0.032,
+    color: '#666',
+    textAlign: 'center',
+  },
+  bmiCircleContainer: {
+    width: SCREEN_WIDTH * 0.25,
+    height: SCREEN_WIDTH * 0.25,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SCREEN_HEIGHT * 0.01,
+  },
+  bmiProgressBackground: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: SCREEN_WIDTH * 0.125,
+    borderWidth: SCREEN_WIDTH * 0.01,
+    borderColor: '#f0f0f0',
+  },
+  bmiProgress: {
+    position: 'absolute',
+    width: '50%',
+    height: '100%',
+    left: '50%',
+    top: 0,
+    borderRadius: SCREEN_WIDTH * 0.125,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    transformOrigin: 'left center',
+  },
+  bmiCircle: {
+    width: SCREEN_WIDTH * 0.2,
+    height: SCREEN_WIDTH * 0.2,
+    borderRadius: SCREEN_WIDTH * 0.1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bmiScale: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: SCREEN_HEIGHT * 0.01,
+  },
+  bmiScaleText: {
+    fontSize: SCREEN_WIDTH * 0.025,
+    fontWeight: '600',
+  },
+  userIcon: {
+    marginBottom: SCREEN_HEIGHT * 0.01,
+  },
+  userTextContainer: {
+    alignItems: 'center',
+  },
+  userName: {
+    fontSize: SCREEN_WIDTH * 0.04,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: SCREEN_HEIGHT * 0.005,
+  },
+  userEmail: {
+    fontSize: SCREEN_WIDTH * 0.03,
+    color: '#666',
+    maxWidth: '100%',
   },
   section: {
     marginBottom: SCREEN_HEIGHT * 0.02,
