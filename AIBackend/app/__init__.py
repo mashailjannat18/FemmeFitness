@@ -9,7 +9,9 @@ def create_app():
 
     app.config['BREVO_API_KEY'] = os.getenv('BREVO_API_KEY')
     app.config['BREVO_SENDER_EMAIL'] = os.getenv('BREVO_SENDER_EMAIL')
-    app.config['BREVO_SENDER_NAME'] = os.getenv('BREVO_SENDER_NAME', 'Your App')
+    app.config['BREVO_SENDER_NAME'] = os.getenv('BREVO_SENDER_NAME', 'Femme Fitness')
+    app.config['SUPABASE_URL'] = os.getenv('SUPABASE_URL')
+    app.config['SUPABASE_KEY'] = os.getenv('SUPABASE_KEY')
 
     from app.routes.workout_routes import workout_bp
     app.register_blueprint(workout_bp, url_prefix='/api')

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.models.menstruation_cycle import predict_cycle_phases
 from app.models.ovulation_recalibration import predict_recalibrated_future_phase
 from app.models.workout_plan import generate_workout_plan
@@ -6,21 +6,23 @@ from app.models.meal_plan import generate_meal_plan
 import numpy as np
 from datetime import datetime, timedelta
 import requests
-import os
 import logging
 from supabase import create_client, Client
 
 cycle_bp = Blueprint('cycle', __name__)
 
-# Supabase configuration
-SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://oqrdyazxwbpmemnablfk.supabase.co')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xcmR5YXp4d2JwbWVtbmFibGZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQzNjkyNTcsImV4cCI6MjA0OTk0NTI1N30.nXtUdxnIqQXUhY-W06h5TO2B6CXi0sBsD6Rj_f9ojnQ')
-SUPABASE_HEADERS = {
-    'apikey': SUPABASE_KEY,
-    'Authorization': f'Bearer {SUPABASE_KEY}',
-    'Content-Type': 'application/json'
-}
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Initialize Supabase client when the blueprint is first accessed
+@cycle_bp.before_app_first_request
+def init_supabase():
+    cycle_bp.supabase = create_client(
+        current_app.config['SUPABASE_URL'],
+        current_app.config['SUPABASE_KEY']
+    )
+    cycle_bp.SUPABASE_HEADERS = {
+        'apikey': current_app.config['SUPABASE_KEY'],
+        'Authorization': f'Bearer {current_app.config['SUPABASE_KEY']}',
+        'Content-Type': 'application/json'
+    }
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
@@ -163,8 +165,8 @@ def recalibrate_cycle():
 
         # Fetch user data from Supabase
         user_response = requests.post(
-            f'{SUPABASE_URL}/rest/v1/rpc/get_user_data',
-            headers=SUPABASE_HEADERS,
+            f"{current_app.config['SUPABASE_URL']}/rest/v1/rpc/get_user_data",
+            headers=current_app.SUPABASE_HEADERS,
             json={"p_user_id": user_id}
         )
         if user_response.status_code != 200:
@@ -187,8 +189,8 @@ def recalibrate_cycle():
         today = datetime.today().strftime('%Y-%m-%d')
         five_days_ago = (datetime.today() - timedelta(days=5)).strftime('%Y-%m-%d')
         sleep_response = requests.post(
-            f'{SUPABASE_URL}/rest/v1/rpc/get_avg_sleep',
-            headers=SUPABASE_HEADERS,
+            f"{current_app.config['SUPABASE_URL']}/rest/v1/rpc/get_avg_sleep",
+            headers=current_app.SUPABASE_HEADERS,
             json={
                 "p_user_id": user_id,
                 "p_start_date": five_days_ago,
@@ -204,8 +206,8 @@ def recalibrate_cycle():
 
         # Fetch average water intake for the past 5 days
         water_response = requests.post(
-            f'{SUPABASE_URL}/rest/v1/rpc/get_avg_water_intake',
-            headers=SUPABASE_HEADERS,
+            f"{current_app.config['SUPABASE_URL']}/rest/v1/rpc/get_avg_water_intake",
+            headers=current_app.SUPABASE_HEADERS,
             json={
                 "p_user_id": user_id,
                 "p_start_date": five_days_ago,
@@ -350,7 +352,7 @@ def update_cycle_and_plans():
 
         # Call Supabase function
         try:
-            response = supabase.rpc('update_cycle_and_plans', {
+            response = current_app.supabase.rpc('update_cycle_and_plans', {
                 'p_user_id': user_id,
                 'p_weight': weight,
                 'p_activity_level': activity_level,

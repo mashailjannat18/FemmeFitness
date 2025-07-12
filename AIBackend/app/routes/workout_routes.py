@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.models.workout_plan import generate_workout_plan
 from app.models.meal_plan import generate_meal_plan
 import numpy as np
@@ -8,12 +8,18 @@ import pytz
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-supabase: Client = create_client("https://oqrdyazxwbpmemnablfk.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xcmR5YXp4d2JwbWVtbmFibGZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQzNjkyNTcsImV4cCI6MjA0OTk0NTI1N30.nXtUdxnIqQXUhY-W06h5TO2B6CXi0sBsD6Rj_f9ojnQ")
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 workout_bp = Blueprint('workout', __name__)
+
+# Initialize Supabase client when the blueprint is first accessed
+@workout_bp.before_app_first_request
+def init_supabase():
+    workout_bp.supabase = create_client(
+        current_app.config['SUPABASE_URL'],
+        current_app.config['SUPABASE_KEY']
+    )
 
 # Add this mapping near the GOAL_MAPPING
 DISEASE_MAPPING = {
@@ -385,7 +391,7 @@ def update_plan():
         # Call the SQL function with remainingDays
         logger.info(f"DEBUG: Calling update_user_and_workout_plan with challengeDays: {data['challengeDays']}, remainingDays: {data['remainingDays']}, startDate: {start_date_db}")
         try:
-            response = supabase.rpc('update_user_and_workout_plan', {
+            response = current_app.supabase.rpc('update_user_and_workout_plan', {
                 'p_user_id': data['userId'],
                 'p_weight': data['weight'],
                 'p_activity_level': data['activityLevel'],
@@ -454,7 +460,7 @@ def update_plans_for_diseases():
         # Fetch user data
         logger.info(f"DEBUG: Fetching user data for user_id: {user_id}")
         try:
-            user_response = supabase.from_('User').select('*').eq('id', user_id).single().execute()
+            user_response = current_app.supabase.from_('User').select('*').eq('id', user_id).single().execute()
             user = user_response.data
             logger.info(f"DEBUG: Fetched user data: {user}")
         except Exception as e:
@@ -582,7 +588,7 @@ def update_plans_for_diseases():
 
         # Call the update function
         try:
-            response = supabase.rpc('update_workout_and_meal_plan', {
+            response = current_app.supabase.rpc('update_workout_and_meal_plan', {
                 'p_user_id': user_id,
                 'p_weight': user['weight'],
                 'p_activity_level': user['activity_level'],

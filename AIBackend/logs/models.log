@@ -3496,3 +3496,16 @@
 2025-07-09 12:11:17,632 - INFO - HTTP Request: POST https://oqrdyazxwbpmemnablfk.supabase.co/rest/v1/rpc/update_user_and_workout_plan "HTTP/2 200 OK"
 2025-07-09 12:11:17,642 - INFO - DEBUG: RPC update_user_and_workout_plan succeeded: [{'user_id': 197, 'workout_plan_id': 151}]
 2025-07-09 12:11:17,659 - INFO - 10.135.64.162 - - [09/Jul/2025 12:11:17] "POST /api/update-plan HTTP/1.1" 200 -
+2025-07-12 17:13:24,312 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.18:5000
+2025-07-12 17:13:24,317 - INFO - [33mPress CTRL+C to quit[0m
+2025-07-12 17:13:24,321 - INFO -  * Restarting with stat
+2025-07-12 17:13:28,551 - WARNING -  * Debugger is active!
+2025-07-12 17:13:28,566 - INFO -  * Debugger PIN: 564-936-889
+2025-07-12 17:39:14,333 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.18:5000
+2025-07-12 17:39:14,334 - INFO - [33mPress CTRL+C to quit[0m
